@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- `cistack:coordinator` agent: start it as the main session with `claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official`. It runs `/cistack:wake-up` first (#5).
+- `/cistack:wake-up` reconciles `.cistack/status.json` with GitHub (GitHub wins), lists leftover worktrees, and posts where things stand to the project's Discord channel, or prints it when Discord isn't connected (#5).
+- Onboarding section E connects a project channel: it checks the Discord plugin and bot token, creates one webhook per role, and gives the owner the `/discord:access` command that lets their messages through with no @mention (#5).
+- `scripts/discord.mjs` creates the role webhooks and posts as a role (`say --as <role>`), optionally into a thread and under a numbered name such as `coder-2`. It splits long messages, never pings anyone, and finds `.cistack/` from inside a worktree (#5).
+
 ## 0.2.0
 
 - `/cistack:onboard` sets up a target project: board and issues, commands and worktree setup, and domain docs. It explores first, takes one section at a time with a recommended answer, shows drafts, and writes the project's facts to committed `docs/agents/` files plus an `## Agent skills` block. It also creates the gitignored `.cistack/` folder (#4).

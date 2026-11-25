@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.2.0, early.** Onboarding works; the coordinator and the rest of the team are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.3.0, early.** Onboarding and the coordinator's wake-up work, with Discord. Planning, coders, review and QA are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -27,7 +27,17 @@ In the target repository, inside Claude Code:
 /cistack:onboard
 ```
 
-Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run, and writes them to `docs/agents/`. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
+Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run, writes them to `docs/agents/`, and connects a Discord channel. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
+
+## Start the coordinator
+
+```
+claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
+```
+
+`/cistack:wake-up` comes first on the line, because Claude Code does not let a plugin's agent start a command by itself. The coordinator checks its state against GitHub, and posts where things stand in the project's Discord channel. Without `--channels`, it reports in the terminal only. For a shorter command, add `alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'` to your shell profile.
+
+On Discord, the coordinator is the bot. The other roles post through their own webhooks, each under its own name ([ADR 0002](docs/adr/0002-discord-identities-via-one-bot-and-webhooks.md)).
 
 ## Develop locally
 

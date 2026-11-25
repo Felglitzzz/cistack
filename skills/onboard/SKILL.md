@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: Set up this repository as a cistack target project, covering the board, commands, worktree setup and domain docs. Run it once before waking the coordinator, and again to review or change the answers.
+description: Set up this repository as a cistack target project, covering the board, commands, worktree setup, domain docs and Discord. Run it once before waking the coordinator, and again to review or change the answers.
 disable-model-invocation: true
 ---
 
@@ -52,6 +52,18 @@ Issues live in this repo's GitHub issues. Tickets are sub-issues of their spec, 
 
 Single-context (one `GLOSSARY.md` and `docs/adr/` at the root) fits almost every repo: choose it without asking. Offer multi-context only when exploration found monorepo signs.
 
+### E. Discord
+
+The coordinator is the Discord bot, through the official Discord plugin. Every other role posts through its own channel webhook, under its own name. The owner can skip this section, and cistack then reports in the terminal only.
+
+1. Check the plugin is installed (`claude plugin list` shows `discord@claude-plugins-official`) and has a bot token (`~/.claude/channels/discord/.env` holds a `DISCORD_BOT_TOKEN=` line; check for it without printing the value). If either is missing, walk the owner through the plugin's Quick Setup: create the bot, enable Message Content Intent, invite it to the server, then `/plugin install discord@claude-plugins-official` and `/discord:configure <token>`. Add one thing the plugin's setup leaves out: give the bot's role the **Manage Webhooks** permission.
+2. Recommend one channel per target project, named after the repo. Ask for its channel ID and the owner's Discord user ID. In Discord, turn on Developer Mode, then right-click the channel or your own avatar and choose Copy ID.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/discord.mjs" webhooks ensure --channel <channel-id>`. It creates one webhook per role (`cistack-reviewer`, `cistack-qa`, `cistack-coder`, `cistack-advisor`, `cistack-teacher`) and saves their URLs to `.cistack/discord.json`. Exit code 3 means the bot lacks Manage Webhooks on that channel. Fix it and run again.
+4. Ask the owner to type this themselves; the plugin accepts access changes only when the owner types them:
+   `/discord:access group add <channel-id> --no-mention --allow <owner-user-id>`
+   This lets every message from the owner reach the coordinator, with no @mention needed, and nobody else's.
+5. Optionally, the owner can give each `cistack-<role>` webhook an avatar under the channel's Settings → Integrations → Webhooks.
+
 ## 4. Draft
 
 Fill the templates and show every file before writing. Let the owner edit them.
@@ -65,9 +77,16 @@ Fill the templates and show every file before writing. Let the owner edit them.
 
 - Write the three `docs/agents/` files.
 - Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
-- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Add nothing else there yet.
+- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Only section E writes there (`.cistack/discord.json`). Discord settings are personal and never go in `docs/agents/`.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.
 
 ## 6. Done
 
-Say that onboarding is complete, which files were written, and any open item, such as a board workflow still off. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.
+Say that onboarding is complete, which files were written, and any open item, such as a board workflow still off. Then give the launch command, plus an optional alias for the owner's shell profile:
+
+```
+claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
+alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'
+```
+
+Keep `/cistack:wake-up` first on the line: without it the coordinator does not wake up, and after `--channels` it would be read as a channel. Without Discord, `claude /cistack:wake-up --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.

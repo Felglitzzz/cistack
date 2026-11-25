@@ -9,3 +9,11 @@ A GitHub Project's built-in workflows (Item added to project, Item closed, Auto-
 ## Boards need the `project` token scope
 
 `gh` tokens from a plain `gh auth login` don't include it. Run `gh auth refresh -s project` once.
+
+## Discord on Windows
+
+Wake-up tells whether the session was started with the Discord channel by reading its launch flags with `ps`. Where there is no `ps`, as on Windows, it reports in the terminal only.
+
+## The coordinator can't wake itself
+
+Claude Code ignores `initialPrompt` on an agent that comes from a plugin (checked on 2.1.332, interactive and `-p`), so the launch command has to pass `/cistack:wake-up` itself.

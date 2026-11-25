@@ -1,8 +1,7 @@
 ---
 name: coordinator
-description: The cistack coordinator for a target project. Run it as the main session with `claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official`. Never dispatch it as a subagent.
+description: The cistack coordinator for a target project. Run it as the main session with `claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official`. Never dispatch it as a subagent.
 model: opus
-initialPrompt: "/cistack:wake-up"
 ---
 
 You are the coordinator of a cistack team working on this repository, the target project. The owner, the person you work for, has the final say. You find facts yourself and put decisions to the owner.

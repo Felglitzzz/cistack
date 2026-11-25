@@ -7,6 +7,8 @@
 //   node scripts/discord.mjs webhooks ensure --channel <channel-id>
 //   node scripts/discord.mjs say --as <role> [--name <display-name>] [--thread <thread-id>] [--text <text>]
 //     (reads the text from stdin when --text is absent)
+//   node scripts/discord.mjs listening
+//     (was this Claude Code session started so that Discord messages reach it?)
 //
 // Webhook URLs live in the target project's gitignored .cistack/discord.json, found
 // from the main checkout even when run inside a worktree.
@@ -81,6 +83,9 @@ async function ensureWebhooks({ channel }) {
   }
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });
+  // The URLs are secrets: ignore the folder from inside, in case .gitignore doesn't list it yet.
+  const ignore = join(dirname(path), ".gitignore");
+  if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
   writeFileSync(path, JSON.stringify({ channelId: channel, webhooks }, null, 2) + "\n");
   console.log(JSON.stringify({ channelId: channel, roles: Object.keys(webhooks) }));
 }
@@ -124,7 +129,28 @@ async function say({ as: role, name, thread, text }) {
   console.log(JSON.stringify({ ids }));
 }
 
+// The nearest `claude` process above this one is the session. Its launch flags are the
+// only sign that messages reach it: the plugin's tools are there with or without them.
+function listening() {
+  let pid = process.ppid;
+  while (pid > 1) {
+    let line;
+    try {
+      line = execFileSync("ps", ["-ww", "-o", "ppid=,command=", "-p", String(pid)], { encoding: "utf8" }).trim();
+    } catch {
+      break;
+    }
+    const [, parent, command] = line.match(/^(\d+)\s+(.*)$/s) ?? [];
+    if (!command) break;
+    if (/\s--channels[\s=].*plugin:discord@/.test(command)) return true;
+    if (/^(\S*\/)?claude(\s|$)/.test(command)) break;
+    pid = Number(parent);
+  }
+  return false;
+}
+
 const [command, sub, ...rest] = process.argv.slice(2);
 if (command === "webhooks" && sub === "ensure") await ensureWebhooks(parseFlags(rest));
+else if (command === "listening") console.log(JSON.stringify({ listening: listening() }));
 else if (command === "say") await say(parseFlags([sub, ...rest].filter((a) => a !== undefined)));
-else die(1, "usage: discord.mjs webhooks ensure --channel <id> | say --as <role> [--name <name>] [--thread <id>] [--text <text>]");
+else die(1, "usage: discord.mjs webhooks ensure --channel <id> | say --as <role> [--name <name>] [--thread <id>] [--text <text>] | listening");

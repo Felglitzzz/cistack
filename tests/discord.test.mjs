@@ -71,6 +71,15 @@ test("webhooks ensure creates one webhook per role, keeps existing ones, and rec
   assert.equal(discord.requests.filter((r) => r.method === "POST").length, 4, "a second run creates nothing");
 });
 
+test("webhooks ensure keeps the webhook URLs out of git even before .gitignore lists .cistack", async (t) => {
+  const { repo } = project(t);
+  const discord = await startFakeDiscord();
+  t.after(discord.close);
+  const { code, stderr } = await run(repo, ["webhooks", "ensure", "--channel", CHANNEL], { DISCORD_API_BASE: discord.base, DISCORD_BOT_TOKEN: "bot-token" });
+  assert.equal(code, 0, stderr);
+  assert.equal(git(repo, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
 test("webhooks ensure exits 3 and names the permission when the bot cannot manage webhooks", async (t) => {
   const { repo } = project(t);
   const discord = await startFakeDiscord({ forbid: true });
@@ -151,4 +160,25 @@ test("say finds the main checkout's .cistack from inside a worktree", async (t) 
   const { code, stderr } = await run(worktree, ["say", "--as", "coder", "--name", "coder-1", "--text", "Started."]);
   assert.equal(code, 0, stderr);
   assert.equal(discord.requests[0].path, "/webhooks/3/t3");
+});
+
+// Runs `listening` under a stand-in for the claude process, started with the given flags.
+function listeningUnder(flags) {
+  const launch = `require("node:child_process").spawn(process.execPath, [${JSON.stringify(script)}, "listening"], { stdio: "inherit" })`;
+  return new Promise((done) => {
+    const child = spawn(process.execPath, ["-e", launch, "--", ...flags], { argv0: "claude" });
+    let stdout = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.on("close", () => done(JSON.parse(stdout || "{}")));
+  });
+}
+
+test("listening is true when the session was started with the Discord channel", async () => {
+  const result = await listeningUnder(["--agent", "cistack:coordinator", "--channels", "plugin:discord@claude-plugins-official"]);
+  assert.deepEqual(result, { listening: true });
+});
+
+test("listening is false when the session was started without the Discord channel", async () => {
+  assert.deepEqual(await listeningUnder(["--plugin-dir", "."]), { listening: false });
+  assert.deepEqual(await listeningUnder(["--channels", "plugin:telegram@claude-plugins-official"]), { listening: false });
 });

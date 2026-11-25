@@ -11,7 +11,12 @@ You are starting a session as the coordinator, with no memory of earlier ones. W
 ## 1. Check the setup
 
 - `docs/agents/issue-tracker.md` must exist. If it doesn't, the project isn't onboarded: tell the owner to run `/cistack:onboard`, and stop.
-- Discord is connected when the Discord plugin's `reply` tool is available and `.cistack/discord.json` exists. If either is missing, say which. For the tool, the session must be started with `claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official`. For the file, onboarding's Discord section creates it. Then carry on, reporting in the terminal only.
+- Discord is connected only when all three hold. Check each one, even after another has failed, so the owner hears everything that is missing at once:
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/discord.mjs" listening` prints `"listening":true`, meaning this session was started with `--channels plugin:discord@claude-plugins-official`. The `reply` tool alone proves nothing: it is there without `--channels` too, and then the owner's messages never reach you;
+  - the Discord plugin's `reply` tool is available;
+  - `.cistack/discord.json` exists, which onboarding's Discord section creates.
+
+  Otherwise say what is missing, then carry on, reporting in the terminal only. Post nothing to Discord.
 
 ## 2. Reconcile with GitHub
 

@@ -85,8 +85,8 @@ Fill the templates and show every file before writing. Let the owner edit them.
 Say that onboarding is complete, which files were written, and any open item, such as a board workflow still off. Then give the launch command, plus an optional alias for the owner's shell profile:
 
 ```
-claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
-alias cistack='claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'
+claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
+alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'
 ```
 
-Without Discord, `claude --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.
+Keep `/cistack:wake-up` first on the line: without it the coordinator does not wake up, and after `--channels` it would be read as a channel. Without Discord, `claude /cistack:wake-up --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.

@@ -32,10 +32,10 @@ Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth ref
 ## Start the coordinator
 
 ```
-claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
+claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official
 ```
 
-It wakes up, checks its state against GitHub, and posts where things stand in the project's Discord channel. Without `--channels`, it reports in the terminal only. For a shorter command, add `alias cistack='claude --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'` to your shell profile.
+`/cistack:wake-up` comes first on the line, because Claude Code does not let a plugin's agent start a command by itself. The coordinator checks its state against GitHub, and posts where things stand in the project's Discord channel. Without `--channels`, it reports in the terminal only. For a shorter command, add `alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'` to your shell profile.
 
 On Discord, the coordinator is the bot. The other roles post through their own webhooks, each under its own name ([ADR 0002](docs/adr/0002-discord-identities-via-one-bot-and-webhooks.md)).
 

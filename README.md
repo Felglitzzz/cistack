@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.1.0, skeleton only.** This version installs and loads, but has no agents, skills or commands yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.2.0, early.** Onboarding works; the coordinator and the rest of the team are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -18,6 +18,16 @@ On Claude Code older than 2.1.275, add the marketplace first:
 /plugin marketplace add Felglitzzz/cistack
 /plugin install cistack@cistack
 ```
+
+## Set up a project
+
+In the target repository, inside Claude Code:
+
+```
+/cistack:onboard
+```
+
+Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run, and writes them to `docs/agents/`. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
 
 ## Develop locally
 

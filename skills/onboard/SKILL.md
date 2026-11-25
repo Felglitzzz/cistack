@@ -16,7 +16,7 @@ Read what exists, and don't assume:
 
 - `gh auth status`: signed in? Note the token scopes.
 - `git remote -v`: a GitHub remote? `git rev-list --count HEAD`: at least one commit?
-- `CLAUDE.md` and `AGENTS.md` at the root. Does either already have an `## Agent skills` block? Does `CLAUDE.md` only import `AGENTS.md` (for example a lone `@AGENTS.md` line)?
+- `CLAUDE.md` and `AGENTS.md` at the root. Does either already have an `## Agent skills` block? Does `CLAUDE.md` only import `AGENTS.md` (for example a lone `@AGENTS.md` line), or is it a symlink to `AGENTS.md`? Either way, treat them as one file: `AGENTS.md`.
 - `docs/agents/issue-tracker.md`, `commands.md`, `domain.md`: is this a re-run?
 - `GLOSSARY.md`, `GLOSSARY-MAP.md`, `docs/adr/`.
 - Signs of a monorepo, such as a workspace file, a `workspaces` field, or several packages with their own sources.
@@ -64,7 +64,7 @@ Fill the templates and show every file before writing. Let the owner edit them.
 ## 5. Write
 
 - Write the three `docs/agents/` files.
-- Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and holds more than an import of `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
+- Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
 - Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Add nothing else there yet.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.
 

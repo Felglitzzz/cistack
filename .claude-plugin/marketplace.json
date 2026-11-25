@@ -1,0 +1,21 @@
+{
+  "name": "cistack",
+  "owner": {
+    "name": "Felix Amande",
+    "url": "https://github.com/Felglitzzz"
+  },
+  "metadata": {
+    "description": "cistack: a small AI software team for any repository."
+  },
+  "plugins": [
+    {
+      "name": "cistack",
+      "description": "A small AI software team for any repository: a coordinator grills you into a spec, coders build tickets in parallel worktrees, a reviewer and QA check every pull request, and you follow along on Discord.",
+      "source": "./",
+      "author": {
+        "name": "Felix Amande",
+        "url": "https://github.com/Felglitzzz"
+      }
+    }
+  ]
+}

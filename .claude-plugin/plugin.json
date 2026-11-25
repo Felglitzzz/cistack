@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "cistack",
+  "version": "0.1.0",
+  "description": "A small AI software team for any repository: a coordinator grills you into a spec, coders build tickets in parallel worktrees, a reviewer and QA check every pull request, and you follow along on Discord.",
+  "author": {
+    "name": "Felix Amande",
+    "url": "https://github.com/Felglitzzz"
+  },
+  "homepage": "https://github.com/Felglitzzz/cistack",
+  "repository": "https://github.com/Felglitzzz/cistack",
+  "license": "MIT",
+  "keywords": ["agents", "team", "code-review", "qa", "github-projects", "discord"]
+}

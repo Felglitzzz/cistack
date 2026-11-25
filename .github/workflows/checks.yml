@@ -1,0 +1,48 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CLAUDE_CODE_VERSION: 2.1.331
+  DISABLE_AUTOUPDATER: "1"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Tests
+        run: node --test "tests/**/*.test.mjs"
+
+      - name: Install Claude Code
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      - name: Validate marketplace, plugin, agents, skills and commands
+        run: |
+          claude plugin validate --strict .
+          claude plugin validate --strict .claude-plugin/plugin.json
+
+      - name: Install from the local marketplace into a clean config
+        env:
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-config
+        run: |
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install cistack@cistack
+          claude plugin list | grep -F "cistack@cistack"
+
+      - name: Check version bump
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-version-bump.mjs "origin/${{ github.base_ref }}"

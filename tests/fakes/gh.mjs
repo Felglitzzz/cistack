@@ -9,7 +9,7 @@ const statePath = process.env.FAKE_GH_STATE;
 const state = JSON.parse(readFileSync(statePath, "utf8"));
 const args = process.argv.slice(2);
 const stdin = args.includes("-") ? readFileSync(0, "utf8") : null;
-state.calls.push({ args, stdin: stdin ? JSON.parse(stdin) : null });
+state.calls.push({ args, stdin: stdin && args[0] === "api" ? JSON.parse(stdin) : stdin });
 
 let seq = state.seq ?? 100;
 const nextId = (prefix) => `${prefix}_${++seq}`;
@@ -95,6 +95,66 @@ if (group === "api" && command === "graphql") {
       },
     },
   });
+}
+
+if (group === "project" && (command === "view" || command === "field-list")) {
+  const project = state.projects.find((p) => p.number === Number(args[2]) && p.owner === flag("--owner"));
+  if (!project) die("GraphQL: Could not resolve to a ProjectV2");
+  if (command === "view") out({ number: project.number, id: project.id, title: project.title, url: project.url });
+  out({ fields: [{ id: "PVTF_title", name: "Title" }, { id: project.status.id, name: "Status", options: project.status.options.map(({ id, name }) => ({ id, name })) }] });
+}
+
+if (group === "issue" && command === "create") {
+  const title = flag("--title");
+  if (state.failOn === title) die("HTTP 502: Bad Gateway");
+  state.issues ??= [];
+  const number = (state.issues.at(-1)?.number ?? 40) + 1;
+  // Real gh links after creating, and prints no URL if that fails, so cistack links separately.
+  if (flag("--parent") || flag("--blocked-by")) die("fake gh: link with `issue edit`, not on create");
+  state.issues.push({ number, title, body: stdin, parent: null, blockedBy: [] });
+  save();
+  process.stdout.write(`https://github.com/acme/widgets/issues/${number}\n`);
+  process.exit(0);
+}
+
+if (group === "issue" && command === "view") {
+  const issue = state.issues.find((i) => i.number === Number(args[2]));
+  out({
+    parent: issue.parent ? { number: issue.parent } : null,
+    blockedBy: { nodes: issue.blockedBy.map((number) => ({ number })), totalCount: issue.blockedBy.length },
+  });
+}
+
+if (group === "issue" && command === "edit") {
+  const issue = state.issues.find((i) => i.number === Number(args[2]));
+  const parent = flag("--parent");
+  const blockers = flag("--add-blocked-by")?.split(",").map(Number) ?? [];
+  if (parent) {
+    if (issue.parent) die("GraphQL: Sub-issue may only have one parent");
+    issue.parent = Number(parent);
+  }
+  // Fails halfway: the parent is set, the blockers are not.
+  if (state.failLinking === issue.title && blockers.length) die("HTTP 502: Bad Gateway");
+  if (blockers.some((b) => issue.blockedBy.includes(b))) die("GraphQL: Dependency already exists");
+  issue.blockedBy.push(...blockers);
+  out({});
+}
+
+if (group === "project" && command === "item-add") {
+  const project = state.projects.find((p) => p.number === Number(args[2]) && p.owner === flag("--owner"));
+  const url = flag("--url");
+  project.items ??= [];
+  let item = project.items.find((i) => i.url === url);
+  if (!item) project.items.push((item = { id: nextId("PVTI"), url, status: null }));
+  out({ id: item.id });
+}
+
+if (group === "project" && command === "item-edit") {
+  const project = state.projects.find((p) => p.id === flag("--project-id"));
+  const item = project.items.find((i) => i.id === flag("--id"));
+  if (flag("--field-id") !== project.status.id) die("fake gh: unknown field");
+  item.status = project.status.options.find((o) => o.id === flag("--single-select-option-id")).name;
+  out({ id: item.id });
 }
 
 die(`fake gh: unsupported call: ${args.join(" ")}`);

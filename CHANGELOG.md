@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Give the coordinator a request and it grills you on it with `cistack:grill-with-docs`: numbered rounds with recommended answers, in a spec thread on Discord or in the terminal, recording terms and ADRs in your project as they settle (#6).
+- `cistack:to-tickets` drafts the spec and tickets and publishes them only after you confirm shared understanding, which also approves the tickets (#6).
+- `scripts/publish.mjs` creates the spec issue and its ticket sub-issues with blocked-by links, puts them on the board in Todo, and records the spec thread in `.cistack/status.json`. Running it again after a failure creates no duplicates (#6).
+- Wake-up reports unfinished grilling, interrupted publishing and tickets in Todo (#6).
+
 ## 0.3.0
 
 - `cistack:coordinator` agent: start it as the main session with `claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official` (#5).

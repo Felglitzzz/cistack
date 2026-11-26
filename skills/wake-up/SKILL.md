@@ -27,6 +27,8 @@ Read `.cistack/status.json`; a missing file means an empty state. Then read GitH
 
 GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove agents whose issue is closed: an agent from an earlier session is no longer running. Note any open issue in In progress, In review or In QA that has no pull request.
 
+Keep `grilling` entries: they have no issue yet, and each is a request still waiting on the owner. Check `.cistack/plans/*/plan.json` too. A plan where some entries have a `number` but not every entry has `onBoard` was interrupted while publishing: offer to finish it with the `cistack:to-tickets` skill's publish step.
+
 ## 3. Find leftover worktrees
 
 `git worktree list --porcelain`. For every worktree other than the main checkout, note its branch, whether the branch is merged into the base branch (`git branch --merged <base>`), and whether it has uncommitted changes (`git -C <path> status --porcelain`). List them. Never delete a worktree with unmerged or uncommitted work without the owner's explicit OK. Offer to remove the ones that are merged and clean.
@@ -35,8 +37,8 @@ GitHub wins any disagreement. Remove thread and review-round entries for closed 
 
 Post one short message to the project channel with the `reply` tool, or print it if Discord isn't connected:
 
-- open specs, and their tickets by status: in progress, in review, in QA, blocked;
-- what is waiting on the owner;
+- open specs, and their tickets by status: todo, in progress, in review, in QA, blocked;
+- what is waiting on the owner, including unfinished grilling and interrupted publishing;
 - anything that disagreed with GitHub and how you resolved it;
 - leftover worktrees.
 

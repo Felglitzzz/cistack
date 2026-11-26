@@ -6,33 +6,12 @@
 // Usage: node scripts/board.mjs ensure --repo <owner/name> [--title <title>] [--number <n>]
 // Exit codes: 0 ok, 1 usage error, 2 gh failed, 3 token lacks the project scope.
 
-import { execFileSync } from "node:child_process";
+import { gh, ghJson } from "./lib/gh.mjs";
 
 const STATUSES = ["Todo", "In progress", "In review", "In QA", "Done", "Blocked"];
 const REQUIRED_WORKFLOWS = ["Item added to project", "Item closed", "Auto-add sub-issues to project"];
 
-const [ghBin, ...ghPrefix] = (process.env.CISTACK_GH ?? "gh").split(" ");
-
-function gh(args, input) {
-  try {
-    return execFileSync(ghBin, [...ghPrefix, ...args], {
-      encoding: "utf8",
-      input,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  } catch (error) {
-    const message = (error.stderr || error.message).trim();
-    if (/missing required scopes/.test(message)) {
-      console.error(`${message}\n\nBoards need the project scope. Run:  gh auth refresh -s project`);
-      process.exit(3);
-    }
-    console.error(`gh ${args.slice(0, 2).join(" ")} failed: ${message}`);
-    process.exit(2);
-  }
-}
-
-const ghJson = (args, input) => JSON.parse(gh(args, input));
-const graphql = (query, variables) => ghJson(["api", "graphql", "--input", "-"], JSON.stringify({ query, variables }));
+const graphql = (query, variables) => ghJson(["api", "graphql", "--input", "-"], { input: JSON.stringify({ query, variables }) });
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;

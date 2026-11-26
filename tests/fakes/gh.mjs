@@ -148,7 +148,26 @@ if (group === "issue" && command === "create") {
 if (group === "pr" && command === "view") {
   const pr = state.prs.find((p) => p.number === Number(args[2]));
   if (!pr) die("GraphQL: Could not resolve to a PullRequest");
-  out({ state: pr.state, url: pr.url, headRefName: pr.headRefName, closingIssuesReferences: pr.closes.map((number) => ({ number })) });
+  out({
+    state: pr.state,
+    url: pr.url,
+    headRefName: pr.headRefName,
+    headRefOid: pr.head,
+    baseRefName: pr.base,
+    closingIssuesReferences: pr.closes.map((number) => ({ number })),
+    comments: pr.comments ?? [],
+  });
+}
+
+if (group === "pr" && command === "comment") {
+  const pr = state.prs.find((p) => p.number === Number(args[2]));
+  if (!pr) die("GraphQL: Could not resolve to a PullRequest");
+  if (flag("--body-file") !== "-") die("fake gh: comment bodies come from stdin");
+  const url = `${pr.url}#issuecomment-${++seq}`;
+  (pr.comments ??= []).push({ author: { login: "owner" }, viewerDidAuthor: true, body: stdin, url });
+  save();
+  process.stdout.write(`${url}\n`);
+  process.exit(0);
 }
 
 if (group === "issue" && command === "view") {

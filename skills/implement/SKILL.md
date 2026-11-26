@@ -1,6 +1,6 @@
 ---
 name: implement
-description: For cistack coders only. Implement one ticket in the coder's worktree, from reading it to opening its pull request.
+description: For cistack coders only. Implement one ticket in the coder's worktree, from reading it to opening its pull request, and answer its review.
 user-invocable: false
 ---
 
@@ -46,3 +46,15 @@ Closes #<ticket number>
 ```
 
 Then report. Review and QA are other roles' work; don't review your own pull request.
+
+## Answering a review
+
+The coordinator comes back to you, or dispatches you, with a review round's findings. Check each one against the code before you act on it: a reviewer can be wrong. Give every finding one mark:
+
+- **fix**: it stands. Fix it with the `cistack:tdd` skill, and look for the same mistake elsewhere in your change.
+- **dispute**: it is wrong, or it is a preference with no rule behind it. Give the evidence as the reason: a file and line, a test, a line of the ticket or spec.
+- **duplicate**: it repeats another finding. Name which.
+
+Don't change code you believe is right to get a pass. A fresh reviewer rules on your disputes next round.
+
+Commit your fixes, run the agreed checks on the new commit as in step 4, push, and update the commit and results in the pull request's body. Then post your marks with the command in the message, and report.

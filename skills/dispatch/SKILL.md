@@ -42,5 +42,5 @@ Say in one line which coder has which ticket, and stay available to the owner wh
 - **A question** (`BLOCKED`): put it to the owner in the ticket thread, with the coder's recommendation. Send the answer to the same coder with SendMessage; it keeps its context. A decision that changes the ticket also goes in a comment on the issue.
 - **A pull request**: run
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" opened --issue <n> --pr <pr> --owner <owner> --project <number>`
-  It checks that the pull request closes the ticket and moves the ticket to In review. Exit code 4 says what is wrong: send that to the coder. Then post the pull request's link in the ticket thread and the project channel. Review, QA and merging aren't available yet, so say it waits for the owner's review and merge.
+  It checks that the pull request closes the ticket and moves the ticket to In review. Exit code 4 says what is wrong: send that to the coder. Then post the pull request's link in the ticket thread and the project channel, and review it with the `cistack:review-loop` skill. Keep the coder's name: the findings go back to it.
 - **It stopped without either**, or can't be reached: remove its entry from `agents` in `.cistack/status.json` and tell the owner. Dispatching the ticket again continues in the same worktree.

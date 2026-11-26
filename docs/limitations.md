@@ -16,7 +16,19 @@ Wake-up tells whether the session was started with the Discord channel by readin
 
 ## Coders ask for permission like any session
 
-A coder runs under your session's permission mode. Claude Code ignores `permissionMode` on a plugin's agent, so cistack can't loosen it. Expect prompts for the commands a coder runs (your project's commands, `git`, `gh`, and the Discord post) unless your settings allow them.
+A coder runs under your session's permission mode, and so does the reviewer (`git`, `gh`, and cistack's review and Discord scripts). Claude Code ignores `permissionMode` on a plugin's agent, so cistack can't loosen it. Expect prompts for the commands a coder runs (your project's commands, `git`, `gh`, and the Discord post) unless your settings allow them.
+
+## The built-in security review reads the working directory
+
+A subagent can call Claude Code's built-in `security-review` skill (checked on 2.1.332). It reviews `origin/HEAD...` where the agent is working, and it can't be pointed at a pull request. Called from the main checkout it is shown an empty diff, which reads like a clean result. So the reviewer runs in a worktree of its own, checks out the pull request's head there, and compares the files the review lists with the pull request's. When they differ, as when the pull request's base isn't the default branch, it applies the same method to the right diff itself and the verdict says `fallback`.
+
+## The reviewer only reads by instruction
+
+The reviewer has no editing tool, but it has a shell, and the Write tool for its verdict file. Nothing yet stops either from changing files in its worktree; hooks that do come with merging.
+
+## Verdicts and answers go through a file
+
+Claude Code refuses a shell command holding JSON from an agent that works in its own worktree ("too complex to verify"), and asks you about it in other sessions (checked on 2.1.332). So the reviewer and the coder write their JSON to a file and give `scripts/review.mjs` its path. The script removes the file after posting.
 
 ## Away from your machine
 

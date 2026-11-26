@@ -25,6 +25,8 @@ Read `.cistack/status.json`; a missing file means an empty state. Then read GitH
 - Board items and their statuses: `gh project item-list <number> --owner <owner> --format json --limit 200`, using the board in `docs/agents/issue-tracker.md`.
 - Open pull requests: `gh pr list --state open --json number,title,headRefName,isDraft`.
 
+For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n>` says where its review stands. Only read it: start no reviewer or coder before the owner asks.
+
 GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove every entry in `agents`: an agent from an earlier session is no longer running. Its worktree stays. Keep `coderCount`. Note any open issue in In progress, In review or In QA that has no pull request: dispatching it again continues in its worktree.
 
 Keep `grilling` entries: they have no issue yet, and each is a request still waiting on the owner. Check `.cistack/plans/*/plan.json` too. A plan where some entries have a `number` but not every entry has `onBoard` was interrupted while publishing: offer to finish it with the `cistack:to-tickets` skill's publish step.
@@ -38,7 +40,8 @@ Keep `grilling` entries: they have no issue yet, and each is a request still wai
 Post one short message to the project channel with the `reply` tool, or print it if Discord isn't connected:
 
 - open specs, and their tickets by status: todo, in progress, in review, in QA, blocked;
-- what is waiting on the owner, including unfinished grilling and interrupted publishing;
+- each open pull request's review: its round and score, or that it passed;
+- what is waiting on the owner, including unfinished grilling, interrupted publishing and escalated reviews;
 - anything that disagreed with GitHub and how you resolved it;
 - leftover worktrees.
 

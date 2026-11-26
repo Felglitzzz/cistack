@@ -181,6 +181,36 @@ test("a ticket can be dispatched again after its coder is gone, keeping the work
   assert.equal(readFileSync(join(json.worktree, "work.txt"), "utf8"), "half done\n");
 });
 
+test("start --pr brings back a coder to answer the review of the ticket's open pull request", (t) => {
+  const p = project(t);
+  const first = p.start(41).json;
+  put(first.worktree, "work.txt", "done\n");
+  git(first.worktree, "add", "-A");
+  git(first.worktree, "commit", "-q", "-m", "work");
+  p.writeStatus({ ...p.status(), agents: [] });
+  p.patchState({ issues: [mergedBlocker, ticket({ closedBy: [{ number: 60, state: "OPEN" }] }), spec] });
+
+  const other = p.start(41, "--pr", "61");
+  assert.equal(other.code, 4);
+  assert.match(other.stderr, /no open pull request #61/);
+
+  const { code, stderr, json } = p.start(41, "--pr", "60");
+  assert.equal(code, 0, stderr);
+  assert.equal(json.name, "coder-2");
+  assert.equal(json.worktree, first.worktree);
+  assert.equal(p.column(41), "In review");
+  assert.match(json.brief, /^You are coder-2\. Answer the review of pull request #60/);
+  assert.ok(!json.brief.includes("gh pr create"));
+});
+
+test("start --pr creates nothing when the pull request's branch isn't here", (t) => {
+  const p = project(t, { issues: [mergedBlocker, ticket({ closedBy: [{ number: 60, state: "OPEN" }] }), spec] });
+  const { code, stderr } = p.start(41, "--pr", "60");
+  assert.equal(code, 1);
+  assert.match(stderr, /No local branch ticket\/41-/);
+  assert.equal(worktrees(p.repo), 1);
+});
+
 test("start copies the configured setup files into the worktree", (t) => {
   const p = project(t, {
     setup: "- `.env.local`: local settings\n- local/generated",

@@ -199,7 +199,7 @@ test("start --pr brings back a coder to answer the review of the ticket's open p
   assert.equal(json.name, "coder-2");
   assert.equal(json.worktree, first.worktree);
   assert.equal(p.column(41), "In review");
-  assert.match(json.brief, /^You are coder-2\. Answer the review of pull request #60/);
+  assert.match(json.brief, /^You are coder-2\. Answer the review or QA of pull request #60/);
   assert.ok(!json.brief.includes("gh pr create"));
 });
 
@@ -312,4 +312,31 @@ test("bad arguments exit 1 with usage", (t) => {
     assert.equal(code, 1, args.join(" "));
     assert.match(stderr, /usage/);
   }
+});
+
+const environmentsDoc = "# Environments\n\n## Environment variables\n\n| Variable | Agent environment | Notes |\n|---|---|---|\n| `API_URL` | allowed | |\n| `STRIPE_KEY` | withheld | live |\n";
+const withEnvironments = (t, ignored) => {
+  const p = project(t, { setup: "- `.env.local`", ignored });
+  put(p.repo, "docs/agents/environments.md", environmentsDoc);
+  git(p.repo, "add", "-A");
+  git(p.repo, "commit", "-q", "-m", "environments");
+  git(p.repo, "push", "-q", "origin", "HEAD:main");
+  return p;
+};
+
+test("start refuses to give a coder a setup file that holds a live integration credential", (t) => {
+  const p = withEnvironments(t, { ".env.local": "STRIPE_KEY=sk_live_abc123\n" });
+  const { code, stderr } = p.start(41);
+  assert.equal(code, 4, stderr);
+  assert.match(stderr, /\.env\.local sets STRIPE_KEY, which .*withholds from agent environments/);
+  assert.ok(!stderr.includes("sk_live"), stderr);
+  assert.equal(worktrees(p.repo), 1);
+  assert.equal(p.column(41), null);
+});
+
+test("the coder's brief keeps withheld variables out of its commands", (t) => {
+  const p = withEnvironments(t, { ".env.local": "API_URL=http://localhost\n" });
+  const { code, stderr, json } = p.start(41);
+  assert.equal(code, 0, stderr);
+  assert.ok(json.brief.includes(`cd "${json.worktree}" && unset STRIPE_KEY && <command>`), json.brief);
 });

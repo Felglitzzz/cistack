@@ -1,7 +1,7 @@
 // Where a target project keeps cistack's gitignored files.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // The main checkout's root, even from inside a worktree.
@@ -16,6 +16,12 @@ export function projectRoot() {
 }
 
 export const cistackPath = (file) => join(projectRoot(), ".cistack", file);
+
+// A .cistack JSON file's contents, or an empty object when there is no file yet.
+export function readCistack(file) {
+  const path = cistackPath(file);
+  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+}
 
 // Writes JSON into .cistack. The folder holds secrets and personal state, so it
 // ignores itself from inside, in case .gitignore doesn't list it yet.

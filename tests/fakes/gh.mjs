@@ -173,6 +173,9 @@ if (group === "pr" && command === "comment") {
 if (group === "issue" && command === "view") {
   const issue = state.issues.find((i) => i.number === Number(args[2]));
   if (flag("--json") === "url") out({ url: issueUrl(issue.number) });
+  if (flag("--json") === "title,body,url,parent") {
+    out({ title: issue.title, body: issue.body ?? "", url: issueUrl(issue.number), parent: issue.parent ? { number: issue.parent } : null });
+  }
   out({
     parent: issue.parent ? { number: issue.parent } : null,
     blockedBy: { nodes: issue.blockedBy.map((number) => ({ number })), totalCount: issue.blockedBy.length },

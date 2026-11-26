@@ -20,6 +20,10 @@ const issues = [
 ];
 const pullRequest = (over = {}) => ({ number: 60, state: "OPEN", url: "https://github.com/acme/widgets/pull/60", headRefName: "ticket/41-export-button", head: HEAD, base: "main", closes: [41], comments: [], ...over });
 
+const STATUSES = ["Todo", "In progress", "In review", "In QA", "Done", "Blocked"];
+const board = () => ({ owner: "acme", number: 7, id: "PVT_7", status: { id: "PVTSSF_7", options: STATUSES.map((name, i) => ({ id: `opt${i}`, name })) } });
+const boardFlags = ["--owner", "acme", "--project", "7"];
+
 // A target project with a coder's pull request open, and a fake gh.
 function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = true } = {}) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "cistack-review-")));
@@ -29,7 +33,7 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   if (status) writeFileSync(join(repo, ".cistack/status.json"), JSON.stringify(status));
   if (discord) writeFileSync(join(repo, ".cistack/discord.json"), JSON.stringify({ channelId: "1", webhooks: { reviewer: "https://example.invalid/hook" } }));
   const statePath = join(repo, "gh.json");
-  writeFileSync(statePath, JSON.stringify({ calls: [], issues, prs: [pullRequest(pr)] }));
+  writeFileSync(statePath, JSON.stringify({ calls: [], projects: [board()], issues, prs: [pullRequest(pr)] }));
   const state = () => JSON.parse(readFileSync(statePath, "utf8"));
 
   function run(args) {
@@ -61,7 +65,14 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   return {
     repo,
     run,
-    next: (...extra) => ok(run(["next", "--pr", "60", ...extra])),
+    next: (...extra) => ok(run(["next", "--pr", "60", ...boardFlags, ...extra])),
+    column: () => state().projects[0].items?.find((i) => i.url.endsWith("/41"))?.status ?? null,
+    // As if QA had started on it.
+    inQa: () => {
+      const s = state();
+      s.projects[0].items = [{ id: "PVTI_1", url: "https://github.com/acme/widgets/issues/41", status: "In QA" }];
+      writeFileSync(statePath, JSON.stringify(s));
+    },
     send,
     inputLeft: () => existsSync(input),
     post: (verdict) => send("post", verdict),
@@ -321,6 +332,36 @@ test("the loop stops at a full score on the current head, and a new push starts 
   assert.equal(again.round, 2);
 });
 
+test("a new push after a pass sends the ticket back to In review", (t) => {
+  const p = project(t);
+  p.inQa();
+  p.next();
+  assert.equal(p.column(), "In QA", "nothing has passed yet");
+  p.ok(p.post(verdict()));
+  p.next();
+  assert.equal(p.column(), "In QA", "the pass still holds");
+
+  p.push(PUSHED);
+  assert.equal(p.next().action, "review");
+  assert.equal(p.column(), "In review");
+
+  // The re-review fails: the earlier pass is still stale, whoever has moved the card since.
+  p.inQa();
+  p.ok(p.post(verdict([finding("risk")], { head: PUSHED })));
+  p.next();
+  assert.equal(p.column(), "In review");
+});
+
+test("a new push after round 4 passed also sends the ticket back to In review", (t) => {
+  const p = project(t);
+  failRounds(p, 3);
+  p.ok(p.post(verdict([], { rulings: [dismissed("R3-1")] })));
+  p.inQa();
+  p.push(PUSHED);
+  assert.equal(p.next().action, "escalate");
+  assert.equal(p.column(), "In review");
+});
+
 test("a verdict posted by someone else doesn't count", (t) => {
   const p = project(t);
   p.ok(p.post(verdict()));
@@ -391,7 +432,7 @@ test("a pass at round 4 stops the loop, and a push after it waits for the owner"
 
 test("next refuses a pull request that is closed or closes no ticket", (t) => {
   for (const [pr, reason] of [[{ state: "MERGED" }, /is merged/], [{ closes: [] }, /closes no ticket/]]) {
-    const { code, stderr } = project(t, { pr }).run(["next", "--pr", "60"]);
+    const { code, stderr } = project(t, { pr }).run(["next", "--pr", "60", ...boardFlags]);
     assert.equal(code, 4);
     assert.match(stderr, reason);
   }
@@ -406,7 +447,7 @@ test("the brief asks for no Discord posts without a thread or a reviewer webhook
 
 test("bad arguments or input exit 1", (t) => {
   const p = project(t);
-  for (const args of [[], ["next"], ["next", "--pr", "sixty"], ["post", "--pr", "60"], ["answer", "--pr", "60", "--owner-ok"], ["next", "--pr", "60", "--file", "x"], ["merge", "--pr", "60"]]) {
+  for (const args of [[], ["next"], ["next", "--pr", "60"], ["next", "--pr", "sixty", ...boardFlags], ["post", "--pr", "60"], ["answer", "--pr", "60", "--owner-ok"], ["next", "--pr", "60", ...boardFlags, "--file", "x"], ["merge", "--pr", "60"]]) {
     const { code, stderr } = p.run(args);
     assert.equal(code, 1, args.join(" "));
     assert.match(stderr, /usage/);

@@ -9,6 +9,9 @@ The commands coders and QA run for this repo, agreed with the owner. Run them fr
 | Lint | {{lint}} |
 | Build | {{build}} |
 | End-to-end | {{e2e}} |
+| Audit | {{audit}} |
+
+`Audit` is the dependency audit. QA runs it only when a lockfile changed.
 
 ## Worktree setup
 

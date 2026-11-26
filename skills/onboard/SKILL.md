@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: Set up this repository as a cistack target project, covering the board, commands, worktree setup, domain docs and Discord. Run it once before waking the coordinator, and again to review or change the answers.
+description: Set up this repository as a cistack target project, covering the board, commands, worktree setup, environment slots, domain docs and Discord. Run it once before waking the coordinator, and again to review or change the answers.
 disable-model-invocation: true
 ---
 
@@ -17,11 +17,13 @@ Read what exists, and don't assume:
 - `gh auth status`: signed in? Note the token scopes.
 - `git remote -v`: a GitHub remote? `git rev-list --count HEAD`: at least one commit?
 - `CLAUDE.md` and `AGENTS.md` at the root. Does either already have an `## Agent skills` block? Does `CLAUDE.md` only import `AGENTS.md` (for example a lone `@AGENTS.md` line), or is it a symlink to `AGENTS.md`? Either way, treat them as one file: `AGENTS.md`.
-- `docs/agents/issue-tracker.md`, `commands.md`, `domain.md`: is this a re-run?
+- `docs/agents/issue-tracker.md`, `commands.md`, `environments.md`, `domain.md`: is this a re-run?
 - `GLOSSARY.md`, `GLOSSARY-MAP.md`, `docs/adr/`.
 - Signs of a monorepo, such as a workspace file, a `workspaces` field, or several packages with their own sources.
 - How the repo installs, tests, lints, builds and runs end-to-end checks: package manifests and their scripts, lockfiles, `Makefile`, task runners, and CI workflows (CI shows the commands the project trusts).
-- Gitignored files a fresh checkout needs before those commands work: env files, generated code, local config. `git status --ignored --short` lists them.
+- Gitignored files a fresh checkout needs before those commands work: env files, generated code, local config. `git status --ignored --short` lists them. Never open or print an env file: its values would end up in this conversation.
+- Where the code runs and what it reaches: compose and container files, database and service config, seed or reset scripts, ports, and clients for outside services.
+- The environment variables it uses: `node "${CLAUDE_PLUGIN_ROOT}/scripts/env-vars.mjs"` lists their names and the files that hold them, never a value.
 
 Stop before asking anything if `gh` is not signed in, there is no GitHub remote, or the repo has no commits. Say which, and what to run.
 
@@ -45,8 +47,21 @@ Issues live in this repo's GitHub issues. Tickets are sub-issues of their spec, 
 
 ### B. Commands and worktree setup
 
-1. Propose install, test, lint, build and end-to-end commands from what you found. Each can be `none`. Prefer the commands CI runs.
+1. Propose install, test, lint, build, end-to-end and dependency audit commands from what you found. Each can be `none`. Prefer the commands CI runs. Install should be a clean one that follows the lockfile (`npm ci`, not `npm install`). The audit is the project's own tool for known vulnerabilities, such as `npm audit`; QA runs it when a lockfile changed.
 2. Propose the gitignored files a coder's worktree needs copied from the main checkout. Check each one exists and is gitignored. A tracked file needs no copying. Each is a file or folder path from the repo root, with no wildcards: dispatch copies exactly what is listed.
+
+### C. Environment slots
+
+Where coders and QA run the project's code. cistack records these slots and assumes nothing about the stack, so describe what this project really has, and ask where exploration can't tell. One at a time, each with a recommended answer.
+
+1. **Agent environment**: where agents run the code, and what it connects to.
+2. **Disposable**: may agents seed, reset or break it? Recommend `no` unless it is clearly local and nobody else depends on it. QA seeds, resets or runs destructive checks only on `yes`.
+3. **Shared resources**: what only one agent can use at a time, such as a port or a database.
+4. **Seed and cleanup commands**, each can be `none`.
+5. **Live integrations**: connections whose calls have real effects, such as sending email, charging money or starting builds.
+6. **Environment variables**: take the names from `env-vars.mjs`, and add any you find that it missed, such as in compose or deploy config. Ask the owner about **each one**: may an agent environment hold its value? Recommend `withheld` for anything that could be a live integration's credential, and `allowed` for plain settings and for local or test-mode credentials. A numbered list with a recommendation for each is fine; one the owner doesn't answer is `withheld`. Never ask for a value.
+   Then check the setup files from section B: dispatch and QA refuse to copy a file that sets a withheld variable. Where one does, agree a separate file for agents without it, or drop it from the list.
+7. **Unverified**: what can't be exercised in this environment at all, such as a mobile app with no simulator. QA marks it unverified.
 
 ### D. Domain docs
 
@@ -70,12 +85,13 @@ Fill the templates and show every file before writing. Let the owner edit them.
 
 - [templates/issue-tracker.md](templates/issue-tracker.md) → `docs/agents/issue-tracker.md`, using the board script's JSON.
 - [templates/commands.md](templates/commands.md) → `docs/agents/commands.md`. List setup files as bullets, one per bullet with the path in backticks, or write `None.`
+- [templates/environments.md](templates/environments.md) → `docs/agents/environments.md`, with one row per environment variable, or `| none | | |`.
 - [templates/domain.md](templates/domain.md) → `docs/agents/domain.md`.
 - [templates/agent-skills-block.md](templates/agent-skills-block.md) → the `## Agent skills` block.
 
 ## 5. Write
 
-- Write the three `docs/agents/` files. Coders can be dispatched only once these are on the base branch.
+- Write the four `docs/agents/` files. Coders can be dispatched only once `issue-tracker.md` and `commands.md` are on the base branch, and QA can run only once `environments.md` is too.
 - Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
 - Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Only section E writes there (`.cistack/discord.json`). Discord settings are personal and never go in `docs/agents/`.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.

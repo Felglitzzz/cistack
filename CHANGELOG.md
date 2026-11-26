@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+- Once the reviewer passes a pull request's head, `cistack:qa-loop` gets it through QA: `scripts/qa.mjs` moves the ticket to In QA and a fresh `cistack:qa` runs it in a new worktree outside the main checkout, with a clean install and the commands the base branch records (#9).
+- QA uses the new `cistack:evidence` skill and judges every acceptance criterion passed, failed or unverified, with evidence. A pass needs what was run, and a run with anything unverified is not a pass (#9).
+- When a lockfile changed, QA runs the agreed dependency audit, and high or critical findings fail it (#9).
+- The report is posted on the pull request with your login, and QA's worktree is removed as it posts (#9).
+- Onboarding section C records the environment slots in `docs/agents/environments.md`: agent environment, disposable flag, shared resources, seed and cleanup commands, live integrations, environment variables and what can't be exercised. It asks about each variable, using `scripts/env-vars.mjs`, which lists names and never values. Section B now agrees a dependency audit command (#9).
+- QA seeds, resets or runs destructive checks only in a disposable environment. Coders and QA unset withheld variables, and neither is given a setup file that sets one (#9).
+- `scripts/review.mjs next` now needs `--owner` and `--project`: a push after a pass moves the ticket back to In review (#9).
+- Run `/cistack:onboard` again on a project set up earlier, and merge `docs/agents/environments.md`, before QA can run there (#9).
+
 ## 0.6.0
 
 - Once a coder's pull request is open, `cistack:review-loop` reviews it: a fresh `cistack:reviewer` each round, in a worktree of its own, scores ticket criteria, correctness (logic and edge cases), standards, security and risk and names every failing item. Standards also fails on SOLID or clean-code breaks with a real maintenance cost, not on taste (#8).

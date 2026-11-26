@@ -1,0 +1,308 @@
+#!/usr/bin/env node
+// The mechanical half of the review loop.
+//
+// The rounds live on the pull request, as labeled comments that also carry their data.
+// The loop stops when a verdict has a full score on the head. Rounds 1-2 are the
+// coder's to answer, 3-4 the coordinator's, and from round 5 the owner decides.
+//
+// Usage:
+//   node scripts/review.mjs next --pr <n> [--owner-ok]
+//     For the coordinator: what the pull request needs now (review, answer, passed or
+//     escalate), the brief for a fresh reviewer or the message for the coder.
+//     --owner-ok: the owner allowed going on past round 5.
+//   node scripts/review.mjs post --pr <n>   (verdict as JSON on stdin)
+//     For the reviewer: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
+//     "findings": [{"item", "where", "problem"}], "securityReview": "built-in"|"fallback: <why>",
+//     "rulings": [{"finding", "ruling": "upheld"|"dismissed", "reason"}] (one per dispute)}
+//   node scripts/review.mjs answer --pr <n>   (answers as JSON on stdin)
+//     For the coder, once any fixes are pushed: {"answers": [{"finding": "R1-1",
+//     "mark": "fix"|"dispute"|"duplicate", "reason" (dispute), "of" (duplicate), "note"}]}
+//
+// Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh failed,
+// 3 token lacks the project scope, 4 refused.
+
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { gh, ghJson } from "./lib/gh.mjs";
+import { cistackPath, writeCistack } from "./lib/project.mjs";
+
+const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> | answer --pr <n>";
+// What every reviewer scores, in this order. The score is the number that pass.
+const CHECKLIST = ["ticket criteria", "standards", "security", "risk"];
+// A pull request that hasn't passed by this round goes to the owner.
+const LAST_ROUND = 5;
+const here = dirname(fileURLToPath(import.meta.url));
+const reviewScript = join(here, "review.mjs");
+const discordScript = join(here, "discord.mjs");
+
+function die(message, code = 1) {
+  console.error(message);
+  process.exit(code);
+}
+
+const refuse = (message) => die(message, 4);
+
+function parseArgs(argv) {
+  const [command, flag, pr, ...rest] = argv;
+  const ownerOk = command === "next" && rest[0] === "--owner-ok";
+  const extra = rest.length - Number(ownerOk);
+  if (!["next", "post", "answer"].includes(command) || flag !== "--pr" || !/^\d+$/.test(pr ?? "") || extra) die(USAGE);
+  return { command, pr: Number(pr), ownerOk };
+}
+
+const readCistack = (file) => {
+  const path = cistackPath(file);
+  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+};
+
+function pullRequest(number) {
+  const pr = ghJson(["pr", "view", String(number), "--json", "state,url,headRefOid,baseRefName,closingIssuesReferences,comments"]);
+  if (pr.state !== "OPEN") refuse(`Pull request #${number} is ${pr.state.toLowerCase()}.`);
+  const issue = pr.closingIssuesReferences[0]?.number;
+  if (!issue) refuse(`Pull request #${number} closes no ticket. Its body needs "Closes #<ticket>".`);
+  return { number, issue, url: pr.url, head: pr.headRefOid, base: pr.baseRefName, comments: pr.comments };
+}
+
+// A comment carries its data in a first line GitHub doesn't show.
+const marker = (kind, data) => `<!-- cistack:${kind} ${Buffer.from(JSON.stringify(data)).toString("base64")} -->`;
+
+// Only comments posted with this login count: anyone can write the same words on a public repo.
+function records(pr, kind) {
+  const pattern = new RegExp(`^<!-- cistack:${kind} ([A-Za-z0-9+/=]+) -->`);
+  return pr.comments.flatMap((comment) => {
+    const data = comment.viewerDidAuthor && comment.body.match(pattern)?.[1];
+    return data ? [{ ...JSON.parse(Buffer.from(data, "base64").toString("utf8")), url: comment.url }] : [];
+  });
+}
+
+const failing = ({ checklist }) => CHECKLIST.filter((item) => checklist[item] === "fail");
+
+function score(verdict) {
+  const failed = failing(verdict);
+  return `${CHECKLIST.length - failed.length}/${CHECKLIST.length}${failed.length ? `: ${failed.join(", ")}` : ""}`;
+}
+
+function readInput() {
+  try {
+    return JSON.parse(readFileSync(0, "utf8"));
+  } catch (error) {
+    return die(`Give the JSON on stdin. ${error.message}`);
+  }
+}
+
+// One line of an agent's own words. A bare @name would notify whoever holds that login.
+function text(value, what) {
+  if (typeof value !== "string" || !value.trim()) refuse(`Give ${what}.`);
+  const line = value.trim().replace(/\s+/g, " ");
+  if (/(^|[^\w])@[A-Za-z0-9]/.test(line.replace(/(`+).+?\1/g, ""))) {
+    refuse(`Never write @name on GitHub: put role names and code in backticks. In: ${line}`);
+  }
+  return line;
+}
+
+// The reviewer's word on each finding the coder disputed.
+function checkedRulings(given, disputes, input) {
+  const stray = given.find((r) => !disputes.some((d) => d.id === r.finding));
+  if (stray) refuse(`${stray.finding} is not in dispute.`);
+  return disputes.map(({ id, item }) => {
+    const ruling = given.find((r) => r.finding === id);
+    if (!ruling) refuse(`Rule on ${id}, which the coder disputes.`);
+    if (!["upheld", "dismissed"].includes(ruling.ruling)) refuse(`Rule ${id} upheld or dismissed.`);
+    if (ruling.ruling === "upheld" && input.checklist[item] !== "fail") refuse(`${id} is upheld, so ${item} fails. Raise it again as a finding.`);
+    return { finding: id, ruling: ruling.ruling, reason: text(ruling.reason, `a reason for your ruling on ${id}`) };
+  });
+}
+
+function checkedVerdict(input, pr, round, disputes) {
+  if (input.head !== pr.head) refuse(`The pull request's head is now ${pr.head}, not ${input.head}. Review that commit.`);
+  const items = Object.keys(input.checklist ?? {});
+  if (items.length !== CHECKLIST.length || !CHECKLIST.every((item) => ["pass", "fail"].includes(input.checklist[item]))) {
+    refuse(`Score every item, and only these, "pass" or "fail": ${CHECKLIST.join(", ")}.`);
+  }
+  const findings = (input.findings ?? []).map((f, i) => ({
+    id: `R${round}-${i + 1}`,
+    item: f.item,
+    where: text(f.where, "each finding's `where` (path:line)").replaceAll("`", ""),
+    problem: text(f.problem, "each finding's `problem`"),
+  }));
+  for (const item of CHECKLIST) {
+    const found = findings.some((f) => f.item === item);
+    if (input.checklist[item] === "fail" && !found) refuse(`${item} fails but has no finding.`);
+    if (input.checklist[item] === "pass" && found) refuse(`${item} passes but has a finding. A finding fails its item; leave preferences out.`);
+  }
+  const unknown = findings.find((f) => !CHECKLIST.includes(f.item));
+  if (unknown) refuse(`${unknown.item} is not a checklist item.`);
+  if (!/^(built-in|fallback: .+)$/.test(input.securityReview ?? "")) {
+    refuse('Say how the security review ran in `securityReview`: "built-in", or "fallback: <why>".');
+  }
+  const rulings = checkedRulings(input.rulings ?? [], disputes, input);
+  return { round, head: pr.head, checklist: input.checklist, findings, rulings, securityReview: text(input.securityReview, "`securityReview`") };
+}
+
+const findingLine = (f) => `- **${f.id}** (${f.item}) \`${f.where}\`: ${f.problem}`;
+
+function verdictComment(verdict) {
+  const lines = [
+    marker("verdict", verdict),
+    `**cistack \`reviewer\`** · review round ${verdict.round} · **${score(verdict)}** · commit \`${verdict.head.slice(0, 7)}\``,
+    "",
+    "| Item | Result |",
+    "|---|---|",
+    ...CHECKLIST.map((item) => `| ${item} | ${verdict.checklist[item] === "fail" ? "**fail**" : "pass"} |`),
+    "",
+    `Security review: ${verdict.securityReview}`,
+  ];
+  if (verdict.findings.length) lines.push("", "### Findings", ...verdict.findings.map(findingLine));
+  if (verdict.rulings.length) {
+    lines.push("", "### Rulings on disputes", ...verdict.rulings.map((r) => `- **${r.finding}**: ${r.ruling}: ${r.reason}`));
+  }
+  return lines.join("\n");
+}
+
+// The marks a coder gives the findings of a verdict, one each.
+function checkedAnswers(given, verdict, verdicts) {
+  const ids = verdict.findings.map((f) => f.id);
+  const everRaised = verdicts.flatMap((v) => v.findings.map((f) => f.id));
+  const marked = new Map();
+  for (const a of given) {
+    if (!ids.includes(a.finding)) refuse(`${a.finding} is not a finding of round ${verdict.round}.`);
+    if (marked.has(a.finding)) refuse(`${a.finding} is marked twice.`);
+    marked.set(a.finding, a);
+  }
+  return ids.map((id) => {
+    const a = marked.get(id);
+    if (!a) refuse(`Mark ${id}: every finding needs fix, dispute or duplicate.`);
+    const note = a.note ? { note: text(a.note, "`note`") } : {};
+    if (a.mark === "fix") return { finding: id, mark: "fix", ...note };
+    if (a.mark === "dispute") return { finding: id, mark: "dispute", reason: text(a.reason, `a reason for disputing ${id}`), ...note };
+    if (a.mark !== "duplicate") refuse(`Mark ${id} fix, dispute or duplicate.`);
+    if (a.of === id || !everRaised.includes(a.of) || marked.get(a.of)?.mark === "duplicate") {
+      refuse(`${id} is a duplicate: name in \`of\` the finding it repeats, one that isn't itself marked duplicate.`);
+    }
+    return { finding: id, mark: "duplicate", of: a.of, ...note };
+  });
+}
+
+const answerLine = (a) =>
+  `- **${a.finding}**: ${a.mark}${a.of ? ` of ${a.of}` : ""}${a.reason ? `: ${a.reason}` : ""}${a.note ? ` (${a.note})` : ""}`;
+
+// Where the loop stands. A pass counts only for the head it judged.
+function progress(pr) {
+  const verdicts = records(pr, "verdict");
+  const latest = verdicts.at(-1);
+  const answers = latest && records(pr, "answers").findLast((a) => a.round === latest.round);
+  let action = "review";
+  if (latest && failing(latest).length) action = answers ? "review" : "answer";
+  else if (latest?.head === pr.head) action = "passed";
+
+  const raised = new Map(verdicts.flatMap((v) => v.findings.map((f) => [f.id, f])));
+  const disputes = (answers?.answers ?? []).filter((a) => a.mark === "dispute").map((a) => ({ ...raised.get(a.finding), reason: a.reason }));
+  const settled = verdicts.flatMap((v) => v.rulings.filter((r) => r.ruling === "dismissed").map((r) => raised.get(r.finding)));
+  return { verdicts, latest, answers, action, disputes, settled };
+}
+
+const comment = (pr, body) => gh(["pr", "comment", String(pr.number), "--body-file", "-"], { input: body }).trim();
+
+function post(opts) {
+  const input = readInput();
+  const pr = pullRequest(opts.pr);
+  const { verdicts, latest, action, disputes } = progress(pr);
+  if (action === "passed") refuse(`Pull request #${pr.number} already passed review at ${pr.head}.`);
+  if (action === "answer") refuse(`Round ${latest.round} of pull request #${pr.number} isn't answered yet.`);
+  const verdict = checkedVerdict(input, pr, verdicts.length + 1, disputes);
+  const url = comment(pr, verdictComment(verdict));
+  return { pr: pr.number, round: verdict.round, head: verdict.head, score: score(verdict), findings: verdict.findings, url };
+}
+
+function answer(opts) {
+  const input = readInput();
+  const pr = pullRequest(opts.pr);
+  const { verdicts, latest } = progress(pr);
+  if (!latest || !failing(latest).length) refuse(`Pull request #${pr.number} has no findings to answer.`);
+  const answers = checkedAnswers(input.answers ?? [], latest, verdicts);
+  if (latest.head === pr.head && answers.some((a) => a.mark === "fix")) {
+    refuse("Push your fixes first: the pull request's head is still the commit the reviewer judged.");
+  }
+  const url = comment(
+    pr,
+    [
+      marker("answers", { round: latest.round, answers }),
+      `**cistack \`coder\`** · answers to review round ${latest.round} · commit \`${pr.head.slice(0, 7)}\``,
+      "",
+      ...answers.map(answerLine),
+    ].join("\n"),
+  );
+  return { pr: pr.number, round: latest.round, answers, url };
+}
+
+function answerMessage(pr, verdict) {
+  return [
+    `Review round ${verdict.round} of pull request #${pr.number} scored ${score(verdict)}. Verdict: ${verdict.url}`,
+    "",
+    ...verdict.findings.map(findingLine),
+    "",
+    "Check each finding against the code, then mark every one fix, dispute (with a reason) or duplicate (of which finding). Fix test-first, run the agreed checks, commit and push, then post your marks:",
+    "",
+    "```",
+    `node "${reviewScript}" answer --pr ${pr.number} <<'EOF'`,
+    '{"answers": [{"finding": "<id>", "mark": "fix"}, {"finding": "<id>", "mark": "dispute", "reason": "<why>"}, {"finding": "<id>", "mark": "duplicate", "of": "<id>"}]}',
+    "EOF",
+    "```",
+  ].join("\n");
+}
+
+function reviewerBrief(pr, round, { disputes, settled }) {
+  const spec = ghJson(["issue", "view", String(pr.issue), "--json", "parent"]).parent?.number;
+  const thread = readCistack("discord.json").webhooks?.reviewer && readCistack("status.json").threads?.[pr.issue];
+  const lines = [
+    `You are the reviewer. Review pull request #${pr.number}, round ${round}.`,
+    "",
+    `- Pull request: ${pr.url}, head \`${pr.head}\`, base \`${pr.base}\`.`,
+    `- Ticket: \`gh issue view ${pr.issue} --json number,title,body,comments\`. Read it yourself.`,
+    ...(spec ? [`- Spec: \`gh issue view ${spec} --json title,body\`.`] : []),
+    `- Check out the head in your own worktree: \`git fetch origin ${pr.base} pull/${pr.number}/head\`, then \`git checkout --detach ${pr.head}\`.`,
+    `- Post your verdict with \`node "${reviewScript}" post --pr ${pr.number}\`, giving the JSON on stdin.`,
+  ];
+  if (disputes.length) {
+    lines.push("- Rule on each dispute in `rulings`, upheld or dismissed, with a reason. An upheld one is a finding again:");
+    lines.push(...disputes.map((d) => `  ${findingLine(d)}. The coder disputes it: ${d.reason}`));
+  }
+  if (settled.length) {
+    lines.push("- Settled: these were ruled in the coder's favor. Don't raise them again unless the code they concern has changed:");
+    lines.push(...settled.map((f) => `  ${findingLine(f)}`));
+  }
+  if (thread) {
+    lines.push("- Ticket thread: post your score with", "", "```", `node "${discordScript}" say --as reviewer --thread ${thread} <<'EOF'`, "<message>", "EOF", "```");
+  } else {
+    lines.push("- There is no ticket thread, so post nothing to Discord.");
+  }
+  return lines.join("\n");
+}
+
+const handlerOf = (round) => (round <= 2 ? "coder" : round < LAST_ROUND ? "coordinator" : "owner");
+
+function recordRound(pr, round) {
+  const status = readCistack("status.json");
+  status.reviewRounds = { ...status.reviewRounds, [pr]: round };
+  writeCistack("status.json", status);
+}
+
+function next(opts) {
+  const pr = pullRequest(opts.pr);
+  const state = progress(pr);
+  const { verdicts, latest, answers } = state;
+  const capped = state.action !== "passed" && verdicts.length >= LAST_ROUND && !opts.ownerOk;
+  const action = capped ? "escalate" : state.action;
+  const round = action === "review" ? verdicts.length + 1 : latest.round;
+  recordRound(pr.number, round);
+
+  const result = { pr: pr.number, issue: pr.issue, url: pr.url, head: pr.head, round, handler: handlerOf(round), action };
+  if (latest) Object.assign(result, { score: score(latest), findings: latest.findings, answers: answers?.answers ?? [] });
+  if (action === "review") result.brief = reviewerBrief(pr, round, state);
+  if (action === "answer") result.message = answerMessage(pr, latest);
+  return result;
+}
+
+const opts = parseArgs(process.argv.slice(2));
+console.log(JSON.stringify({ next, post, answer }[opts.command](opts), null, 2));

@@ -4,10 +4,11 @@
 // Usage:
 //   node scripts/dispatch.mjs check --issue <n>
 //     Can this ticket be dispatched? Changes nothing.
-//   node scripts/dispatch.mjs start --issue <n> --owner <owner> --project <number> [--thread <thread-id>]
+//   node scripts/dispatch.mjs start --issue <n> --owner <owner> --project <number> [--thread <thread-id>] [--pr <n>]
 //     Creates the ticket's worktree and branch, copies the setup files in, moves the
 //     ticket to In progress, records the coder in .cistack/status.json and prints
-//     the brief to dispatch it with.
+//     the brief to dispatch it with. With --pr <n>, the ticket's pull request is already
+//     open: the coder is there to answer its review, and the ticket stays In review.
 //   node scripts/dispatch.mjs opened --issue <n> --pr <n> --owner <owner> --project <number>
 //     Checks the coder's pull request closes the ticket, then moves it to In review.
 //
@@ -22,7 +23,7 @@ import { boardStatus } from "./lib/board.mjs";
 import { ghJson } from "./lib/gh.mjs";
 import { cistackPath, projectRoot, writeCistack } from "./lib/project.mjs";
 
-const USAGE = "usage: dispatch.mjs check --issue <n> | start --issue <n> --owner <owner> --project <number> [--thread <id>] | opened --issue <n> --pr <n> --owner <owner> --project <number>";
+const USAGE = "usage: dispatch.mjs check --issue <n> | start --issue <n> --owner <owner> --project <number> [--thread <id>] [--pr <n>] | opened --issue <n> --pr <n> --owner <owner> --project <number>";
 const RESUME = "Run the same command again to finish.";
 const REQUIRED_ON_BASE = ["docs/agents/issue-tracker.md", "docs/agents/commands.md"];
 const discordScript = join(dirname(fileURLToPath(import.meta.url)), "discord.mjs");
@@ -40,7 +41,8 @@ function parseArgs(argv) {
   for (let i = 0; i < rest.length; i += 2) opts[rest[i].replace(/^--/, "")] = rest[i + 1];
   const required = { check: ["issue"], start: ["issue", "owner", "project"], opened: ["issue", "pr", "owner", "project"] }[command];
   const numbers = ["issue", "pr", "project"];
-  if (!required?.every((name) => (numbers.includes(name) ? /^\d+$/.test(opts[name] ?? "") : opts[name]))) die(USAGE);
+  const valid = (name) => (numbers.includes(name) ? /^\d+$/.test(opts[name] ?? "") : opts[name]);
+  if (!required?.every(valid) || ("pr" in opts && !valid("pr"))) die(USAGE);
   return { command, ...opts, issue: Number(opts.issue) };
 }
 
@@ -79,7 +81,8 @@ function unmerged({ number, state, closedByPullRequestsReferences }) {
 }
 
 // The ticket and the repository's base branch, once the ticket is ready for a coder.
-function dispatchable(number) {
+// `pr` is the ticket's open pull request, when the coder is there to answer its review.
+function dispatchable(number, pr) {
   const repo = ghJson(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]);
   const [owner, name] = repo.nameWithOwner.split("/");
   const { issue } = ghJson(["api", "graphql", "--input", "-"], { input: JSON.stringify({ query: ISSUE, variables: { owner, name, number } }) }).data.repository;
@@ -89,7 +92,8 @@ function dispatchable(number) {
   const agent = (readStatus().agents ?? []).find((a) => a.issue === number);
   if (agent) refuse(`#${number} is already ${agent.name}'s, in ${agent.worktree}. If that coder is gone, remove its entry from .cistack/status.json.`);
   const open = issue.closedByPullRequestsReferences.nodes.find((pr) => pr.state === "OPEN");
-  if (open) refuse(`#${number} already has an open pull request #${open.number}.`);
+  if (pr && open?.number !== Number(pr)) refuse(`#${number} has no open pull request #${pr}.`);
+  if (!pr && open) refuse(`#${number} already has an open pull request #${open.number}.`);
   const waiting = issue.blockedBy.nodes.map(unmerged).filter(Boolean);
   if (waiting.length) refuse(`#${number} is blocked: ${waiting.join("; ")}.`);
 
@@ -114,8 +118,9 @@ const slug = (title) => title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0,
 
 const branchPrefix = (issue) => `ticket/${issue}-`;
 
-// One worktree and branch per ticket. A later dispatch picks up where the last one stopped.
-function ticketWorktree(root, { number, title }, base) {
+// One worktree and branch per ticket. A later dispatch picks up where the last one stopped,
+// and with `mustExist` there has to be something to pick up.
+function ticketWorktree(root, { number, title }, base, mustExist) {
   const container = join(root, ".claude", "worktrees");
   const worktree = join(container, `ticket-${number}`);
   mkdirSync(container, { recursive: true });
@@ -132,20 +137,27 @@ function ticketWorktree(root, { number, title }, base) {
     git(root, "worktree", "add", worktree, existing);
     return { worktree, branch: existing, resumed: true };
   }
+  if (mustExist) die(`No local branch ${branchPrefix(number)}* has the pull request's work. Check it out, then run this again.`);
   const branch = `${branchPrefix(number)}${slug(title)}`;
   git(root, "worktree", "add", "--no-track", "-b", branch, worktree, `origin/${base}`);
   return { worktree, branch, resumed: false };
 }
 
-function brief({ name, issue, worktree, branch, base, resumed, files, thread }) {
+function brief({ name, issue, worktree, branch, base, resumed, files, thread, pr }) {
+  const task = pr
+    ? `Answer the review of pull request #${pr} for ticket #${issue.number}, "${issue.title}". The findings follow this brief.`
+    : `Implement ticket #${issue.number}, "${issue.title}", and open its pull request.`;
+  const branchLine = pr
+    ? `- Branch: \`${branch}\`, already checked out, with its pull request open against \`origin/${base}\`. Push to it; open no other.`
+    : `- Branch: \`${branch}\`, already checked out. The base is \`origin/${base}\`; open the pull request with \`gh pr create --head ${branch} --base ${base}\` (no \`cd\` needed), with \`Closes #${issue.number}\` in its body.`;
   const lines = [
-    `You are ${name}. Implement ticket #${issue.number}, "${issue.title}", and open its pull request.`,
+    `You are ${name}. ${task}`,
     "",
     `- Ticket: \`gh issue view ${issue.number} --json number,title,body,comments\`. Read it yourself; it outranks anything said about it.`,
     ...(issue.parent ? [`- Spec: \`gh issue view ${issue.parent.number} --json title,body\`.`] : []),
     `- Worktree: \`${worktree}\`. Work only there, and give file tools absolute paths under it.`,
     `- Shell: your \`cd\` is forgotten between commands. Run git as \`git -C "${worktree}" <command>\`, and the project's commands as \`cd "${worktree}" && <command>\`. Never put \`cd\` and git in one command: the owner is asked to approve each one.`,
-    `- Branch: \`${branch}\`, already checked out. The base is \`origin/${base}\`; open the pull request with \`gh pr create --head ${branch} --base ${base}\` (no \`cd\` needed), with \`Closes #${issue.number}\` in its body.`,
+    branchLine,
     `- Setup files copied in: ${files.length ? files.map((f) => `\`${f}\``).join(", ") : "none"}.`,
   ];
   if (resumed) lines.push("- An earlier dispatch worked on this branch. Read its commits and uncommitted changes before you add to them.");
@@ -171,8 +183,9 @@ function hasCoderWebhook() {
 }
 
 function start(opts) {
-  const { issue, base } = dispatchable(opts.issue);
-  const move = boardStatus({ owner: opts.owner, number: opts.project, status: "In progress", hint: RESUME });
+  const { issue, base } = dispatchable(opts.issue, opts.pr);
+  const status = opts.pr ? "In review" : "In progress";
+  const move = boardStatus({ owner: opts.owner, number: opts.project, status, hint: RESUME });
   const root = projectRoot();
   git(root, "fetch", "origin", base);
   for (const path of REQUIRED_ON_BASE) {
@@ -184,19 +197,19 @@ function start(opts) {
   }
   const files = setupFiles(root);
 
-  const { worktree, branch, resumed } = ticketWorktree(root, issue, base);
+  const { worktree, branch, resumed } = ticketWorktree(root, issue, base, Boolean(opts.pr));
   for (const file of files) cpSync(join(root, file), join(worktree, file), { recursive: true, force: false });
   move(issue.url);
 
-  const status = readStatus();
-  status.coderCount = (status.coderCount ?? 0) + 1;
-  const name = `coder-${status.coderCount}`;
-  status.agents = [...(status.agents ?? []), { name, role: "coder", issue: issue.number, worktree, branch }];
-  if (opts.thread) status.threads = { ...status.threads, [issue.number]: opts.thread };
-  writeCistack("status.json", status);
+  const state = readStatus();
+  state.coderCount = (state.coderCount ?? 0) + 1;
+  const name = `coder-${state.coderCount}`;
+  state.agents = [...(state.agents ?? []), { name, role: "coder", issue: issue.number, worktree, branch }];
+  if (opts.thread) state.threads = { ...state.threads, [issue.number]: opts.thread };
+  writeCistack("status.json", state);
 
   const thread = hasCoderWebhook() ? opts.thread : undefined;
-  return { name, issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, thread }) };
+  return { name, issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, thread, pr: opts.pr }) };
 }
 
 function opened(opts) {

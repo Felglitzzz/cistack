@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.4.0, early.** Onboarding, the coordinator's wake-up and planning work, with Discord. Coders, review and QA are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.5.0, early.** Onboarding, the coordinator's wake-up, planning and coder dispatch work, with Discord. One coder builds at a time; review, QA and merging are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -37,11 +37,17 @@ claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@cl
 
 `/cistack:wake-up` comes first on the line, because Claude Code does not let a plugin's agent start a command by itself. The coordinator checks its state against GitHub, and posts where things stand in the project's Discord channel. Without `--channels`, it reports in the terminal only. For a shorter command, add `alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'` to your shell profile.
 
+To leave it working while you're away, run `sh scripts/start.sh` from a cistack checkout, or the copy onboarding puts at `.cistack/start.sh` in your project. It adds Remote Control, auto mode and, on macOS, no idle sleep. See [Away from your machine](docs/limitations.md#away-from-your-machine).
+
 On Discord, the coordinator is the bot. The other roles post through their own webhooks, each under its own name ([ADR 0002](docs/adr/0002-discord-identities-via-one-bot-and-webhooks.md)).
 
 ## Plan work
 
 Tell the coordinator what you want, in the terminal or the project channel. It opens a spec thread and grills you in numbered rounds, each question with a recommended answer. Terms and hard-to-reverse decisions go into your project's `GLOSSARY.md` and `docs/adr/` as you settle them. Once you confirm shared understanding, it publishes a spec issue with ticket sub-issues, linked by their blockers, in Todo on the board.
+
+## Build a ticket
+
+Ask the coordinator to build a ticket whose blockers have merged. It opens a ticket thread, gives a fresh coder its own worktree under `.claude/worktrees/` with your setup files copied in, and moves the card to In progress. The coder works test-first, runs your agreed checks, and opens a pull request that closes the ticket; the card moves to In review. Until review and QA are built, you review and merge it. Onboarding's `docs/agents/` files must be on the base branch first.
 
 ## Develop locally
 

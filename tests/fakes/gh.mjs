@@ -78,8 +78,36 @@ if (group === "project" && command === "link") {
   out({});
 }
 
+if (group === "repo" && command === "view") out({ nameWithOwner: state.repo, defaultBranchRef: { name: state.defaultBranch } });
+
+const issueUrl = (number) => `https://github.com/acme/widgets/issues/${number}`;
+
 if (group === "api" && command === "graphql") {
   const { query, variables } = JSON.parse(stdin);
+  if (query.includes("closedByPullRequestsReferences")) {
+    const find = (number) => state.issues.find((i) => i.number === number);
+    const issue = find(variables.number);
+    if (!issue || `${variables.owner}/${variables.name}` !== state.repo) die("GraphQL: Could not resolve to an Issue");
+    const references = ({ closedBy }, includeClosed) => ({ nodes: closedBy.filter((pr) => includeClosed || pr.state !== "CLOSED") });
+    out({
+      data: {
+        repository: {
+          issue: {
+            number: issue.number,
+            title: issue.title,
+            state: issue.state,
+            url: issueUrl(issue.number),
+            parent: issue.parent ? { number: issue.parent } : null,
+            subIssues: { totalCount: issue.subIssues ?? 0 },
+            blockedBy: {
+              nodes: issue.blockedBy.map((n) => ({ number: n, state: find(n).state, closedByPullRequestsReferences: references(find(n), true) })),
+            },
+            closedByPullRequestsReferences: references(issue, false),
+          },
+        },
+      },
+    });
+  }
   if (query.includes("updateProjectV2Field")) {
     const project = state.projects.find((p) => p.status.id === variables.fieldId);
     project.status.options = variables.options.map((o) => ({ ...o, id: o.id ?? nextId("opt") }));
@@ -117,8 +145,15 @@ if (group === "issue" && command === "create") {
   process.exit(0);
 }
 
+if (group === "pr" && command === "view") {
+  const pr = state.prs.find((p) => p.number === Number(args[2]));
+  if (!pr) die("GraphQL: Could not resolve to a PullRequest");
+  out({ state: pr.state, url: pr.url, headRefName: pr.headRefName, closingIssuesReferences: pr.closes.map((number) => ({ number })) });
+}
+
 if (group === "issue" && command === "view") {
   const issue = state.issues.find((i) => i.number === Number(args[2]));
+  if (flag("--json") === "url") out({ url: issueUrl(issue.number) });
   out({
     parent: issue.parent ? { number: issue.parent } : null,
     blockedBy: { nodes: issue.blockedBy.map((number) => ({ number })), totalCount: issue.blockedBy.length },
@@ -152,6 +187,7 @@ if (group === "project" && command === "item-add") {
 if (group === "project" && command === "item-edit") {
   const project = state.projects.find((p) => p.id === flag("--project-id"));
   const item = project.items.find((i) => i.id === flag("--id"));
+  if (state.failItemEdit) die("HTTP 502: Bad Gateway");
   if (flag("--field-id") !== project.status.id) die("fake gh: unknown field");
   item.status = project.status.options.find((o) => o.id === flag("--single-select-option-id")).name;
   out({ id: item.id });

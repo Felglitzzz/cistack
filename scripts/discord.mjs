@@ -15,9 +15,10 @@
 // Exit codes: 0 ok, 1 usage or configuration error, 2 Discord API error, 3 missing permission.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { cistackPath, writeCistack } from "./lib/project.mjs";
 
 const ROLES = ["reviewer", "qa", "coder", "advisor", "teacher"];
 const LIMIT = 2000;
@@ -34,19 +35,8 @@ function parseFlags(argv) {
   return flags;
 }
 
-function projectRoot() {
-  try {
-    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-    return dirname(common);
-  } catch {
-    die(1, "Run this inside the target project's git repository.");
-  }
-}
-
-const configPath = () => join(projectRoot(), ".cistack", "discord.json");
-
 function readConfig() {
-  const path = configPath();
+  const path = cistackPath("discord.json");
   if (!existsSync(path)) die(1, `No ${path}. Run onboarding's Discord section first.`);
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -81,12 +71,7 @@ async function ensureWebhooks({ channel }) {
     const hook = existing.find((w) => w.name === name && w.token) ?? (await discord("POST", `${API}/channels/${channel}/webhooks`, { token, body: { name } }));
     webhooks[role] = `${API}/webhooks/${hook.id}/${hook.token}`;
   }
-  const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
-  // The URLs are secrets: ignore the folder from inside, in case .gitignore doesn't list it yet.
-  const ignore = join(dirname(path), ".gitignore");
-  if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
-  writeFileSync(path, JSON.stringify({ channelId: channel, webhooks }, null, 2) + "\n");
+  writeCistack("discord.json", { channelId: channel, webhooks });
   console.log(JSON.stringify({ channelId: channel, roles: Object.keys(webhooks) }));
 }
 

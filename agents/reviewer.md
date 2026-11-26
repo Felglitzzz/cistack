@@ -25,5 +25,5 @@ Follow the `cistack:code-review` skill, with `cistack:secure-coding` for the sec
 
 End with one of:
 
-- the round, the score with every failing item (for example `3/4: security`), each finding's id in one line, and the verdict's link;
+- the round, the score with every failing item (for example `4/5: security`), each finding's id in one line, and the verdict's link;
 - `BLOCKED`: what stopped you and what you tried.

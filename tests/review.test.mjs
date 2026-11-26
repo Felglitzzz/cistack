@@ -74,7 +74,7 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   };
 }
 
-const passing = { "ticket criteria": "pass", standards: "pass", security: "pass", risk: "pass" };
+const passing = { "ticket criteria": "pass", correctness: "pass", standards: "pass", security: "pass", risk: "pass" };
 const finding = (item, problem = "an empty report throws instead of downloading a header row") => ({ item, where: "export.js:12", problem });
 
 // A verdict as the reviewer posts it, failing the items its findings name.
@@ -105,11 +105,11 @@ test("a pull request with no review yet gets round 1, with a brief for a fresh r
 test("post puts a labeled verdict on the pull request, naming every failing item", (t) => {
   const p = project(t);
   const json = p.ok(p.post(verdict([finding("security", "a name with a quote changes the query"), finding("ticket criteria")])));
-  assert.equal(json.score, "2/4: ticket criteria, security");
+  assert.equal(json.score, "3/5: ticket criteria, security");
   assert.deepEqual(json.findings.map((f) => f.id), ["R1-1", "R1-2"]);
 
   const [comment] = p.comments();
-  assert.match(comment.body, /cistack `reviewer`.*review round 1.*2\/4: ticket criteria, security.*`aaaaaaa`/);
+  assert.match(comment.body, /cistack `reviewer`.*review round 1.*3\/5: ticket criteria, security.*`aaaaaaa`/);
   assert.match(comment.body, /R1-1.*\(security\).*`export\.js:12`.*a name with a quote changes the query/);
   assert.match(comment.body, /R1-2.*\(ticket criteria\)/);
   assert.match(comment.body, /Security review: built-in/);
@@ -131,10 +131,18 @@ test("a finding can quote code with braces, quotes and apostrophes", (t) => {
   assert.ok(p.comments()[0].body.includes(`O'Brien breaks \`query(sql, { id: "x" })\``));
 });
 
-test("a full score is posted as 4/4", (t) => {
+test("a full score is posted as 5/5", (t) => {
   const p = project(t);
-  assert.equal(p.ok(p.post(verdict())).score, "4/4");
-  assert.match(p.comments()[0].body, /\*\*4\/4\*\*/);
+  assert.equal(p.ok(p.post(verdict())).score, "5/5");
+  assert.match(p.comments()[0].body, /\*\*5\/5\*\*/);
+});
+
+test("the checklist is five items, scored in order and each named when it fails", (t) => {
+  assert.equal(project(t).ok(project(t).post(verdict([finding("security")]))).score, "4/5: security");
+  const all = ["risk", "security", "standards", "correctness", "ticket criteria"].map((item) => finding(item));
+  const p = project(t);
+  assert.equal(p.ok(p.post(verdict(all))).score, "0/5: ticket criteria, correctness, standards, security, risk");
+  assert.match(p.comments()[0].body, /\| correctness \| \*\*fail\*\* \|/);
 });
 
 for (const [name, bad, reason] of [
@@ -175,7 +183,7 @@ test("after findings, next asks for the coder's answers", (t) => {
   assert.equal(json.action, "answer");
   assert.equal(json.round, 1);
   assert.equal(json.handler, "coder");
-  assert.equal(json.score, "2/4: security, risk");
+  assert.equal(json.score, "3/5: security, risk");
   assert.match(json.message, /R1-1.*\(security\).*`export\.js:12`.*a name with a quote changes the query/);
   assert.match(json.message, /fix, dispute/);
   assert.match(json.message, /Write tool/);
@@ -269,7 +277,7 @@ test("the next verdict has to rule on every dispute", (t) => {
   const maybe = p.post(verdict([], { head: PUSHED, rulings: [{ ...dismissed("R1-2"), ruling: "maybe" }] }));
   assert.match(maybe.stderr, /upheld or dismissed/);
 
-  assert.equal(p.ok(p.post(verdict([], { head: PUSHED, rulings: [dismissed("R1-2")] }))).score, "4/4");
+  assert.equal(p.ok(p.post(verdict([], { head: PUSHED, rulings: [dismissed("R1-2")] }))).score, "5/5");
   assert.match(p.comments().at(-1).body, /R1-2.*dismissed.*the caller does retry/);
 });
 
@@ -302,7 +310,7 @@ test("the loop stops at a full score on the current head, and a new push starts 
   p.ok(p.post(verdict()));
   const passed = p.next();
   assert.equal(passed.action, "passed");
-  assert.equal(passed.score, "4/4");
+  assert.equal(passed.score, "5/5");
   assert.equal(passed.head, HEAD);
   assert.equal(passed.brief, undefined);
   assert.match(p.post(verdict()).stderr, /already passed/);
@@ -346,7 +354,7 @@ test("rounds 1-2 are the coder's, 3-4 the coordinator's, and an unpassed round 4
   ]);
   const stuck = p.next();
   assert.equal(stuck.action, "escalate");
-  assert.equal(stuck.score, "3/4: risk");
+  assert.equal(stuck.score, "4/5: risk");
   assert.equal(stuck.findings[0].id, "R4-1");
   assert.deepEqual(p.status().reviewRounds, { 60: 4 });
 });
@@ -406,7 +414,7 @@ test("bad arguments or input exit 1", (t) => {
   const missing = p.run(["post", "--pr", "60", "--file", "nowhere.json"]);
   assert.equal(missing.code, 1);
   assert.match(missing.stderr, /Can't read nowhere\.json/);
-  const garbled = p.send("post", "4/4, ship it");
+  const garbled = p.send("post", "5/5, ship it");
   assert.equal(garbled.code, 1);
   assert.match(garbled.stderr, /isn't JSON/);
 });

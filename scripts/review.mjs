@@ -32,7 +32,7 @@ import { cistackPath, writeCistack } from "./lib/project.mjs";
 
 const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
 // What every reviewer scores, in this order. The score is the number that pass.
-const CHECKLIST = ["ticket criteria", "standards", "security", "risk"];
+const CHECKLIST = ["ticket criteria", "correctness", "standards", "security", "risk"];
 // The last round that needs no word from the owner.
 const LAST_ROUND = 4;
 const here = dirname(fileURLToPath(import.meta.url));

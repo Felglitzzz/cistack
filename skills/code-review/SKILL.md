@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: For cistack reviewers only. Score a pull request's head against the fixed checklist (ticket criteria, standards, security, risk) and post the verdict.
+description: For cistack reviewers only. Score a pull request's head against the fixed checklist (ticket criteria, correctness, standards, security, risk) and post the verdict.
 user-invocable: false
 ---
 
@@ -32,18 +32,21 @@ When the call fails, or the files differ (an empty list included), it did not re
 
 ## 4. Score the checklist
 
-Each item passes or fails. Score all four.
+Each item passes or fails. Score all five.
 
 | Item | Fails when |
 |---|---|
 | `ticket criteria` | An acceptance criterion is unmet, partly met, or has no test where a test could show it. Or the diff does something nobody asked for. Quote the ticket or spec line. |
-| `standards` | The diff breaks a documented standard (cite the file and rule), uses a word the glossary says to avoid, or contradicts an ADR. Or it has a smell below with a maintenance cost you can describe. |
+| `correctness` | The new or changed code does the wrong thing for some input, state or timing, whether or not a criterion names it: wrong logic, an empty, missing or boundary value, a race, or a failure path nobody handles. |
+| `standards` | The diff breaks a documented standard (cite the file and rule), uses a word the glossary says to avoid, or contradicts an ADR. Or it breaks a SOLID principle or a clean-code practice, such as a smell below, with a real maintenance cost you can describe. Taste alone never fails it. |
 | `security` | Either check in step 3 finds a vulnerability someone could use. |
-| `risk` | Merging could break what works today or can't be taken back: lost or corrupted data, behavior that callers rely on changed, a one-way migration, a race, or a failure path nobody handles. |
+| `risk` | Merging could harm what works today or can't be taken back: lost or corrupted data, behavior that callers rely on changed, a one-way migration or other step with no way back, or load that grows with the data. |
 
-A failing item needs at least one finding. A finding names `where` (`path:line`) and the `problem`: the input or timing that goes wrong and what someone sees, or the rule broken. A preference is not a finding, and neither is a problem the diff didn't cause. Check before you raise one: read the callers, or `git show origin/<base>:<path>` to see what was already there. Passing all four is a valid result.
+Raise each problem once, under the item that fits it best: an unmet criterion is `ticket criteria`, and a vulnerability is `security`.
 
-Smells worth naming, always a judgement call, and silent where the project's standards allow them: mysterious name, duplicated code, feature envy, data clumps, primitive obsession, repeated switches, shotgun surgery, divergent change, speculative generality, message chains, middle man, refused bequest. Skip anything the project's tooling already checks.
+SOLID is single responsibility, open to extension but closed to modification, substitutable subtypes, narrow interfaces, and depending on abstractions. Name the principle the diff breaks and the change it will make harder. Smells worth naming: mysterious name, duplicated code, feature envy, data clumps, primitive obsession, repeated switches, shotgun surgery, divergent change, speculative generality, message chains, middle man, refused bequest. A smell or a principle is a judgement call, and silent where the project's standards allow what it would flag. Skip anything the project's tooling already checks.
+
+A failing item needs at least one finding. A finding names `where` (`path:line`) and the `problem`: the input or timing that goes wrong and what someone sees, or the rule broken. A preference is not a finding, and neither is a problem the diff didn't cause. Check before you raise one: read the callers, or `git show origin/<base>:<path>` to see what was already there. Passing all five is a valid result.
 
 ## 5. Rule on disputes
 
@@ -61,7 +64,7 @@ Write this JSON with the Write tool to the file your brief names, then run the `
 ```json
 {
   "head": "<the full commit you judged>",
-  "checklist": { "ticket criteria": "pass", "standards": "pass", "security": "fail", "risk": "pass" },
+  "checklist": { "ticket criteria": "pass", "correctness": "pass", "standards": "pass", "security": "fail", "risk": "pass" },
   "findings": [{ "item": "security", "where": "path:line", "problem": "<one or two sentences>" }],
   "rulings": [{ "finding": "<id>", "ruling": "dismissed", "reason": "<why>" }],
   "securityReview": "built-in"

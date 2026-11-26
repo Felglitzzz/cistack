@@ -37,6 +37,8 @@ claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@cl
 
 `/cistack:wake-up` comes first on the line, because Claude Code does not let a plugin's agent start a command by itself. The coordinator checks its state against GitHub, and posts where things stand in the project's Discord channel. Without `--channels`, it reports in the terminal only. For a shorter command, add `alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'` to your shell profile.
 
+To leave it working while you're away, run `sh scripts/start.sh` from a cistack checkout, or the copy onboarding puts at `.cistack/start.sh` in your project. It adds Remote Control, auto mode and, on macOS, no idle sleep. See [Away from your machine](docs/limitations.md#away-from-your-machine).
+
 On Discord, the coordinator is the bot. The other roles post through their own webhooks, each under its own name ([ADR 0002](docs/adr/0002-discord-identities-via-one-bot-and-webhooks.md)).
 
 ## Plan work

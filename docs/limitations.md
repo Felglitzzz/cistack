@@ -20,7 +20,7 @@ A coder runs under your session's permission mode. Claude Code ignores `permissi
 
 ## Away from your machine
 
-A permission prompt pauses the work until someone answers it. To answer from your phone:
+A permission prompt pauses the work until someone answers it. `scripts/start.sh` starts the coordinator with Remote Control, auto mode and `caffeinate`. To answer from your phone:
 
 - **Remote Control**: add `--remote-control` to the launch command, before `--channels`, and answer in the Claude app. It needs a claude.ai subscription. Turn on **Push when actions required** in `/config` to be notified.
 - **Discord**: the Discord plugin also sends permission prompts as direct messages, but only to people paired for direct messages, and setting up a server channel pairs nobody. Send your bot a direct message, run `/discord:access pair <code>`, then `/discord:access policy allowlist`. Anyone paired can approve commands on your machine.

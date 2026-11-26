@@ -6,6 +6,7 @@
 - `scripts/dispatch.mjs` refuses a ticket whose blockers haven't merged, creates the ticket's worktree under `.claude/worktrees/` with your setup files copied in, numbers the coder, moves the card to In progress, and moves it to In review once the pull request closes the ticket (#7).
 - The coder works test-first with adapted `cistack:implement` (no self-review) and `cistack:tdd` skills, runs the agreed checks, opens a pull request, and posts its progress under its own name (#7).
 - Wake-up now clears every agent left from an earlier session. Dispatching its ticket again continues in the same worktree (#7).
+- Onboarding and `docs/limitations.md` say how to answer permission prompts while away from your machine (#7).
 
 ## 0.4.0
 

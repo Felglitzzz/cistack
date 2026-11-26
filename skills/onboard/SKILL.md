@@ -90,3 +90,5 @@ alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels pl
 ```
 
 Keep `/cistack:wake-up` first on the line: without it the coordinator does not wake up, and after `--channels` it would be read as a channel. Without Discord, `claude /cistack:wake-up --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.
+
+Also tell the owner how to answer permission prompts if they'll be away from this machine while coders work: add `--remote-control` before `--channels` (it needs a claude.ai subscription) and turn on **Push when actions required** in `/config`; `--permission-mode auto` means fewer prompts; the machine has to stay awake. Without Remote Control, Discord sends prompts only to people paired with the bot for direct messages, which the owner sets up themselves with `/discord:access`.

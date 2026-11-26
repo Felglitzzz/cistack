@@ -701,3 +701,12 @@ test("criteria grouped under subheadings are all judged", (t) => {
   assert.match(brief, /^- C2: A file uploads\.$/m);
   assert.ok(!brief.includes("Not a criterion"));
 });
+
+test("start prints QA's configured model, and a changed model applies from the next run", (t) => {
+  const p = project(t);
+  const first = p.ok(p.start());
+  assert.equal(first.model, "sonnet");
+  p.ok(p.run("done", "--pr", "60"));
+  writeFileSync(join(p.repo, ".cistack/settings.json"), JSON.stringify({ models: { qa: "opus" } }));
+  assert.equal(p.ok(p.start()).model, "opus");
+});

@@ -53,12 +53,12 @@ Write `.cistack/plans/<topic-slug>/plan.json`:
   "spec": { "title": "Spec: <topic>", "bodyFile": "spec.md" },
   "tickets": [
     { "key": "rows", "title": "<short name>", "what": "<the behavior this ticket makes work>", "criteria": ["<observable behavior>"] },
-    { "key": "button", "title": "<short name>", "what": "<…>", "criteria": ["<…>"], "blockedBy": ["rows"] }
+    { "key": "button", "title": "<short name>", "what": "<…>", "criteria": ["<…>"], "blockedBy": ["rows"], "resources": ["<shared resource>"] }
   ]
 }
 ```
 
-`blockedBy` takes other tickets' keys, or numbers of issues that already exist.
+`blockedBy` takes other tickets' keys, or numbers of issues that already exist. `resources` is optional: the shared resources the ticket needs, named as `docs/agents/environments.md` lists them under Shared resources. Tickets that need the same one never run at the same time, so list a resource only where the ticket really uses it. Leave it out otherwise, and independent tickets still run in parallel.
 
 ## 3. Confirm shared understanding
 

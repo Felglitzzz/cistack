@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Several coders can build at once, up to a limit you set: `scripts/dispatch.mjs` refuses (exit code 5, "not now") a coder past `coderLimit`, 2 by default, and the limit is read afresh at every dispatch, so a change applies from the next one. A coder keeps its place until its ticket's pull request has merged (#12).
+- Tickets that need the same shared resource take turns. A ticket lists what it needs under `## Shared resources`, named as `docs/agents/environments.md` lists them (`scripts/publish.mjs` writes the section from a ticket's `resources`); dispatch holds back a ticket whose resource another coder has, refuses a name the doc doesn't list, and lets every other ticket run in parallel (#12).
+- Onboarding section H records a model per role (defaults: coordinator, reviewer and teacher on `opus`; coder and QA on `sonnet`; advisor on `fable`) and the coder limit in `.cistack/settings.json`, which is gitignored. `scripts/settings.mjs` shows and sets them (#12).
+- Each agent runs on its role's model: `dispatch.mjs start`, `review.mjs next` (for a new reviewer) and `qa.mjs start` print a `model` that the coordinator passes to the Agent tool, and `start.sh` starts the coordinator on its model (#12).
+- Onboarding section C asks for each shared resource as a named bullet. Run `/cistack:onboard` again to change your answers in a project set up earlier (#12).
+
 ## 0.8.0
 
 - `cistack:merge-loop` merges a pull request once the reviewer and QA have both passed its current head: `scripts/merge.mjs` squash-merges it, one at a time, with the head pinned so a push in between stops it. If the base moved, `merge.mjs rebase` has GitHub rebase the branch: the reviewer's pass carries over when the change itself is the same, and QA runs again on the new head (#10).

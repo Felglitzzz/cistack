@@ -3,30 +3,35 @@
 //
 // Usage:
 //   node scripts/dispatch.mjs check --issue <n>
-//     Can this ticket be dispatched? Changes nothing.
+//     Can this ticket be dispatched? Changes nothing. Besides being ready, it must fit the
+//     coder limit (settings.mjs) and need no shared resource another coder has.
 //   node scripts/dispatch.mjs start --issue <n> --owner <owner> --project <number> [--thread <thread-id>] [--pr <n>]
 //     Creates the ticket's worktree and branch, copies the setup files in (none may set
 //     a variable the agent environment withholds), moves the ticket to In progress,
-//     records the coder in .cistack/status.json and prints the brief to dispatch it
-//     with. With --pr <n>, the ticket's pull request is already open: the coder is there
-//     to answer its review or QA, and the ticket is moved to In review.
+//     records the coder (and the shared resources its ticket needs) in .cistack/status.json
+//     and prints the coder's model and the brief to dispatch it with. With --pr <n>, the
+//     ticket's pull request is already open: the coder is there to answer its review or QA,
+//     and the ticket is moved to In review.
 //   node scripts/dispatch.mjs opened --issue <n> --pr <n> --owner <owner> --project <number>
 //     Checks the coder's pull request closes the ticket, then moves it to In review.
 //
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh or git failed,
-// 3 token lacks the project scope, 4 refused: the ticket or pull request isn't ready.
+// 3 token lacks the project scope, 4 refused: the ticket or pull request isn't ready,
+// 5 not now: the coder limit is reached or another ticket holds a shared resource.
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardStatus } from "./lib/board.mjs";
-import { die, refuse } from "./lib/cli.mjs";
+import { die, refuse, wait } from "./lib/cli.mjs";
 import { environment, setupFiles } from "./lib/docs.mjs";
 import { refuseWithheld } from "./lib/env-files.mjs";
 import { ghJson } from "./lib/gh.mjs";
 import { git, onBase } from "./lib/git.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
+import { listedResources, neededResources, resolveResources } from "./lib/resources.mjs";
+import { modelFor, readSettings } from "./lib/settings.mjs";
 
 const USAGE = "usage: dispatch.mjs check --issue <n> | start --issue <n> --owner <owner> --project <number> [--thread <id>] [--pr <n>] | opened --issue <n> --pr <n> --owner <owner> --project <number>";
 const RESUME = "Run the same command again to finish.";
@@ -49,7 +54,7 @@ const readStatus = () => readCistack("status.json");
 const ISSUE = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      number title state url
+      number title body state url
       parent { number }
       subIssues { totalCount }
       blockedBy(first: 50) { nodes { number state closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { nodes { number state } } } }
@@ -67,11 +72,29 @@ function unmerged({ number, state, closedByPullRequestsReferences }) {
   return null;
 }
 
+// The shared resources a ticket needs, under the names the environments doc gives them.
+function ticketResources(body, base) {
+  const needed = neededResources(body);
+  if (!needed.length) return [];
+  const root = projectRoot();
+  git(root, "fetch", "origin", base);
+  const listed = listedResources(onBase(root, base, "docs/agents/environments.md"));
+  const { known, unknown } = resolveResources(needed, listed);
+  if (unknown.length) {
+    const names = unknown.map((r) => `\`${r}\``).join(", ");
+    refuse(listed.length
+      ? `The ticket needs ${names}, which docs/agents/environments.md doesn't list under Shared resources. It lists ${listed.map((r) => `\`${r}\``).join(", ")}. Fix the ticket's "Shared resources" section or the doc.`
+      : `The ticket needs ${names}, but docs/agents/environments.md lists no shared resources on the base branch. Fix the ticket's "Shared resources" section or the doc.`);
+  }
+  return known;
+}
+
 // The ticket and the repository's base branch, once the ticket is ready for a coder.
 // `pr` is the ticket's open pull request, when the coder is there to answer its review or QA.
 function dispatchable(number, pr) {
   const repo = ghJson(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]);
   const [owner, name] = repo.nameWithOwner.split("/");
+  const base = repo.defaultBranchRef.name;
   const { issue } = ghJson(["api", "graphql", "--input", "-"], { input: JSON.stringify({ query: ISSUE, variables: { owner, name, number } }) }).data.repository;
 
   if (issue.state !== "OPEN") refuse(`#${number} is closed.`);
@@ -84,7 +107,21 @@ function dispatchable(number, pr) {
   const waiting = issue.blockedBy.nodes.map(unmerged).filter(Boolean);
   if (waiting.length) refuse(`#${number} is blocked: ${waiting.join("; ")}.`);
 
-  return { issue, base: repo.defaultBranchRef.name };
+  // A coder keeps its place and its shared resources from dispatch until its ticket's
+  // pull request has merged, so they are held even while it waits for review or QA.
+  const resources = ticketResources(issue.body, base);
+  const coders = (readStatus().agents ?? []).filter((a) => a.role === "coder");
+  const holder = coders.find((a) => a.resources?.some((r) => resources.includes(r)));
+  if (holder) {
+    const held = holder.resources.filter((r) => resources.includes(r)).map((r) => `\`${r}\``);
+    wait(`#${number} needs ${held.join(", ")}, which ${holder.name} has for #${holder.issue}. #${number} waits until that ticket has merged.`);
+  }
+  const { coderLimit } = readSettings();
+  if (coders.length >= coderLimit) {
+    wait(`The coder limit is ${coderLimit}: ${coders.map((a) => `${a.name} has #${a.issue}`).join(", ")}. #${number} waits until one of those tickets has merged, or the owner raises the limit.`);
+  }
+
+  return { issue, base, resources };
 }
 
 const slug = (title) => title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-|-$/g, "") || "ticket";
@@ -154,7 +191,7 @@ function brief({ name, issue, worktree, branch, base, resumed, files, withheld, 
 const hasCoderWebhook = () => Boolean(readCistack("discord.json").webhooks?.coder);
 
 function start(opts) {
-  const { issue, base } = dispatchable(opts.issue, opts.pr);
+  const { issue, base, resources } = dispatchable(opts.issue, opts.pr);
   const status = opts.pr ? "In review" : "In progress";
   const move = boardStatus({ owner: opts.owner, number: opts.project, status, hint: RESUME });
   const root = projectRoot();
@@ -180,12 +217,12 @@ function start(opts) {
   const state = readStatus();
   state.coderCount = (state.coderCount ?? 0) + 1;
   const name = `coder-${state.coderCount}`;
-  state.agents = [...(state.agents ?? []), { name, role: "coder", issue: issue.number, worktree, branch }];
+  state.agents = [...(state.agents ?? []), { name, role: "coder", issue: issue.number, worktree, branch, ...(resources.length ? { resources } : {}) }];
   if (opts.thread) state.threads = { ...state.threads, [issue.number]: opts.thread };
   writeCistack("status.json", state);
 
   const thread = hasCoderWebhook() ? opts.thread : undefined;
-  return { name, issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr: opts.pr }) };
+  return { name, model: modelFor("coder"), issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr: opts.pr }) };
 }
 
 function opened(opts) {

@@ -206,3 +206,26 @@ test("exits 3 with the refresh command when the token lacks the project scope", 
   assert.equal(code, 3);
   assert.match(stderr, /gh auth refresh -s project/);
 });
+
+test("a ticket that needs shared resources names them in its own section, between what to build and its criteria", (t) => {
+  const plan = twoTickets();
+  plan.tickets[1].resources = ["database", "port 3000"];
+  const p = setup(t, { plan });
+  const { code, stderr } = p.run();
+  assert.equal(code, 0, stderr);
+  assert.equal(
+    issue(p.state(), "CSV rows").body,
+    "## What to build\n\nReports can be written as CSV.\n\n## Shared resources\n\n- `database`\n- `port 3000`\n\n## Acceptance criteria\n\n- [ ] A report with 2 rows exports 3 lines.\n- [ ] Commas in values are quoted.\n",
+  );
+  assert.ok(!issue(p.state(), "Export button").body.includes("Shared resources"));
+});
+
+test("refuses a plan whose resources aren't a list of names, publishing nothing", (t) => {
+  const plan = twoTickets();
+  plan.tickets[1].resources = "database";
+  const p = setup(t, { plan });
+  const { code, stderr } = p.run();
+  assert.equal(code, 1);
+  assert.match(stderr, /"csv".*resources/);
+  assert.equal(p.state().issues, undefined);
+});

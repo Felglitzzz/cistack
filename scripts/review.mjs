@@ -11,7 +11,7 @@
 // Usage:
 //   node scripts/review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok]
 //     For the coordinator: what the pull request needs now (review, answer, passed or
-//     escalate), the brief for a fresh reviewer or the message for the coder. A push
+//     escalate), the brief and model for a fresh reviewer or the message for the coder. A push
 //     after a pass moves the ticket back to In review.
 //     --owner-ok: the owner allowed going on past round 4.
 //   node scripts/review.mjs post --pr <n> --file <verdict.json>
@@ -32,6 +32,7 @@ import { boardStatus } from "./lib/board.mjs";
 import { die, oneLine, readInput, refuse, text } from "./lib/cli.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { readCistack, writeCistack } from "./lib/project.mjs";
+import { modelFor } from "./lib/settings.mjs";
 import { CHECKLIST, failing, marker, pullRequest, records, reviewPassed } from "./lib/pr.mjs";
 
 const USAGE = "usage: review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
@@ -275,7 +276,7 @@ function next(opts) {
   const handler = capped ? "owner" : handlerOf(round);
   const result = { pr: pr.number, issue: pr.issue, url: pr.url, head: pr.head, round, handler, action };
   if (latest) Object.assign(result, { score: score(latest), findings: latest.findings, answers: answers?.answers ?? [] });
-  if (action === "review") result.brief = reviewerBrief(pr, round, state);
+  if (action === "review") Object.assign(result, { model: modelFor("reviewer"), brief: reviewerBrief(pr, round, state) });
   if (action === "answer") result.message = answerMessage(pr, latest);
   return result;
 }

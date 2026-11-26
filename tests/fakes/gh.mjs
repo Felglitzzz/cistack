@@ -114,6 +114,7 @@ if (group === "api" && command === "graphql") {
           issue: {
             number: issue.number,
             title: issue.title,
+            body: issue.body ?? "",
             state: issue.state ?? "OPEN",
             url: issueUrl(issue.number),
             parent: issue.parent ? { number: issue.parent } : null,

@@ -7,7 +7,10 @@
 //
 // plan.json (bodyFile is relative to the plan's folder):
 //   { "spec": { "title", "bodyFile" },
-//     "tickets": [{ "key", "title", "what", "criteria": ["…"], "blockedBy": ["<key>", <issue number>] }] }
+//     "tickets": [{ "key", "title", "what", "criteria": ["…"], "blockedBy": ["<key>", <issue number>],
+//                   "resources": ["<shared resource the ticket needs>"] }] }
+// A ticket's resources go in its "Shared resources" section: tickets that need the same
+// one take turns.
 //
 // Issue numbers are written back into the plan as they are created, so running the
 // same command again after a failure finishes the job without duplicates.
@@ -73,7 +76,8 @@ function readPlan(path) {
     if (keys.has(ticket.key)) die(`Ticket key "${ticket.key}" is used twice.`);
     keys.add(ticket.key);
   }
-  for (const { key, title, what, criteria, blockedBy = [] } of tickets) {
+  for (const { key, title, what, criteria, blockedBy = [], resources = [] } of tickets) {
+    if (!Array.isArray(resources) || !resources.every(text)) die(`Ticket "${key}": resources is a list of shared resource names.`);
     if (!text(title) || !text(what)) die(`Ticket "${key}" needs a title and what to build ("what").`);
     if (!Array.isArray(criteria) || criteria.length === 0 || !criteria.every(text)) die(`Ticket "${key}" needs at least one acceptance criterion.`);
     for (const blocker of blockedBy) {
@@ -83,7 +87,9 @@ function readPlan(path) {
   return { plan, specBody: readFileSync(bodyPath, "utf8"), ordered: inDependencyOrder(tickets) };
 }
 
-const ticketBody = ({ what, criteria }) => `## What to build\n\n${what.trim()}\n\n## Acceptance criteria\n\n${criteria.map((c) => `- [ ] ${c.trim()}`).join("\n")}\n`;
+const resourcesSection = (resources = []) => (resources.length ? `## Shared resources\n\n${resources.map((r) => `- \`${r.trim()}\``).join("\n")}\n\n` : "");
+
+const ticketBody = ({ what, criteria, resources }) => `## What to build\n\n${what.trim()}\n\n${resourcesSection(resources)}## Acceptance criteria\n\n${criteria.map((c) => `- [ ] ${c.trim()}`).join("\n")}\n`;
 
 function recordThread(specNumber, thread) {
   const path = cistackPath("status.json");

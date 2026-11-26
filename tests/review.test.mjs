@@ -32,15 +32,21 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   writeFileSync(statePath, JSON.stringify({ calls: [], issues, prs: [pullRequest(pr)] }));
   const state = () => JSON.parse(readFileSync(statePath, "utf8"));
 
-  function run(args, input) {
+  function run(args) {
     const r = spawnSync(process.execPath, [script, ...args], {
       cwd: repo,
       encoding: "utf8",
-      input: input === undefined ? "" : typeof input === "string" ? input : JSON.stringify(input),
       env: { ...process.env, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath },
     });
     return { code: r.status, stderr: r.stderr, json: r.status === 0 ? JSON.parse(r.stdout) : null };
   }
+
+  const input = join(repo, "input.json");
+  // The agent writes its JSON to a file, which the script is given.
+  const send = (command, data) => {
+    writeFileSync(input, typeof data === "string" ? data : JSON.stringify(data));
+    return run([command, "--pr", "60", "--file", input]);
+  };
 
   const patchPr = (patch) => {
     const s = state();
@@ -56,8 +62,10 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
     repo,
     run,
     next: (...extra) => ok(run(["next", "--pr", "60", ...extra])),
-    post: (verdict) => run(["post", "--pr", "60"], verdict),
-    answer: (answers) => run(["answer", "--pr", "60"], { answers }),
+    send,
+    inputLeft: () => existsSync(input),
+    post: (verdict) => send("post", verdict),
+    answer: (answers) => send("answer", { answers }),
     push: (head) => patchPr({ head }),
     patchPr,
     comments: () => state().prs[0].comments,
@@ -87,7 +95,7 @@ test("a pull request with no review yet gets round 1, with a brief for a fresh r
   assert.match(json.brief, /gh issue view 39 /);
   assert.match(json.brief, /git fetch origin main pull\/60\/head/);
   assert.ok(json.brief.includes(`git checkout --detach ${HEAD}`));
-  assert.ok(json.brief.includes(`node "${script}" post --pr 60`));
+  assert.ok(json.brief.includes(`node "${script}" post --pr 60 --file cistack-verdict.json`));
   assert.ok(json.brief.includes(`node "${discordScript}" say --as reviewer --thread 999`));
   assert.ok(!json.brief.includes("https://example.invalid/hook"), "the webhook URL stays out of prompts");
   assert.deepEqual(p.status().reviewRounds, { 60: 1 });
@@ -107,6 +115,22 @@ test("post puts a labeled verdict on the pull request, naming every failing item
   assert.match(comment.body, /Security review: built-in/);
 });
 
+test("a posted file is removed, so no worktree is left changed; a refused one stays to be fixed", (t) => {
+  const p = project(t);
+  assert.equal(p.post({ ...verdict(), securityReview: "skipped" }).code, 4);
+  assert.equal(p.inputLeft(), true);
+  p.ok(p.post(two()));
+  assert.equal(p.inputLeft(), false);
+  p.ok(p.answer([dispute("R1-1"), dispute("R1-2")]));
+  assert.equal(p.inputLeft(), false);
+});
+
+test("a finding can quote code with braces, quotes and apostrophes", (t) => {
+  const p = project(t);
+  p.ok(p.post(verdict([finding("risk", `O'Brien breaks \`query(sql, { id: "x" })\``)])));
+  assert.ok(p.comments()[0].body.includes(`O'Brien breaks \`query(sql, { id: "x" })\``));
+});
+
 test("a full score is posted as 4/4", (t) => {
   const p = project(t);
   assert.equal(p.ok(p.post(verdict())).score, "4/4");
@@ -121,6 +145,7 @@ for (const [name, bad, reason] of [
   ["has a finding without a place or a problem", verdict([{ item: "risk", problem: "x" }]), /where/],
   ["doesn't say how the security review ran", { ...verdict(), securityReview: undefined }, /securityReview/],
   ["mentions someone with @", verdict([finding("risk", "ask @qa to run it")]), /backticks/],
+  ["mentions someone behind backticks that don't close", verdict([finding("risk", "ask ``@qa` to run it")]), /backticks/],
   ["judged another commit", verdict([], { head: PUSHED }), /head is now aaaaaaa/],
 ]) {
   test(`post refuses a verdict that ${name}`, (t) => {
@@ -132,9 +157,11 @@ for (const [name, bad, reason] of [
   });
 }
 
-test("post takes @ inside backticks and in email addresses, which notify nobody", (t) => {
+test("post takes @ inside backticks, in email addresses and in paths, which notify nobody", (t) => {
   const p = project(t);
-  p.ok(p.post(verdict([finding("standards", "imports `@types/node` and mails ops@example.com")])));
+  const scoped = { ...finding("standards", "imports `@types/node` and mails ops@example.com"), where: "app/@modal/page.tsx:3" };
+  p.ok(p.post(verdict([scoped])));
+  assert.match(p.comments()[0].body, /`app\/@modal\/page\.tsx:3`/);
 });
 
 const two = () => verdict([finding("security", "a name with a quote changes the query"), finding("risk", "no test covers the retry")]);
@@ -151,7 +178,8 @@ test("after findings, next asks for the coder's answers", (t) => {
   assert.equal(json.score, "2/4: security, risk");
   assert.match(json.message, /R1-1.*\(security\).*`export\.js:12`.*a name with a quote changes the query/);
   assert.match(json.message, /fix, dispute/);
-  assert.ok(json.message.includes(`node "${script}" answer --pr 60`));
+  assert.match(json.message, /Write tool/);
+  assert.ok(json.message.includes(`node "${script}" answer --pr 60 --file <`));
 });
 
 test("answer posts the coder's marks as a labeled comment", (t) => {
@@ -360,12 +388,15 @@ test("the brief asks for no Discord posts without a thread or a reviewer webhook
 
 test("bad arguments or input exit 1", (t) => {
   const p = project(t);
-  for (const args of [[], ["next"], ["next", "--pr", "sixty"], ["post", "--pr", "60", "--owner-ok"], ["merge", "--pr", "60"]]) {
+  for (const args of [[], ["next"], ["next", "--pr", "sixty"], ["post", "--pr", "60"], ["answer", "--pr", "60", "--owner-ok"], ["next", "--pr", "60", "--file", "x"], ["merge", "--pr", "60"]]) {
     const { code, stderr } = p.run(args);
     assert.equal(code, 1, args.join(" "));
     assert.match(stderr, /usage/);
   }
-  const garbled = p.run(["post", "--pr", "60"], "4/4, ship it");
+  const missing = p.run(["post", "--pr", "60", "--file", "nowhere.json"]);
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /Can't read nowhere\.json/);
+  const garbled = p.send("post", "4/4, ship it");
   assert.equal(garbled.code, 1);
-  assert.match(garbled.stderr, /JSON on stdin/);
+  assert.match(garbled.stderr, /isn't JSON/);
 });

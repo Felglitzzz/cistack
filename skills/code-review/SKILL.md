@@ -10,7 +10,7 @@ Judge the diff, not the description: the description says what the author meant,
 
 ## 1. Check out the head
 
-Your working directory is a worktree of your own. Note the branch it is on (`git branch --show-current`), then run the `git fetch` and `git checkout --detach` from your brief. The change under review is `git diff origin/<base>...HEAD`. If the checkout fails or that diff is empty, report `BLOCKED`: never score an empty diff.
+Your working directory is a worktree of your own. Note the branch it is on (`git branch --show-current`), then run the `git fetch` and `git checkout --detach` from your brief. Run each git command on its own: in a worktree of its own, Claude Code refuses chains it can't check. The change under review is `git diff origin/<base>...HEAD`. If the checkout fails or that diff is empty, report `BLOCKED`: never score an empty diff.
 
 ## 2. Read
 
@@ -56,7 +56,7 @@ Findings your brief lists as settled stay settled unless the code they concern h
 
 ## 6. Post the verdict
 
-Run the `post` command from your brief with this JSON on stdin:
+Write this JSON with the Write tool to the file your brief names, then run the `post` command from your brief. Don't pass the JSON through the shell: Claude Code refuses it, and quoting loses characters.
 
 ```json
 {
@@ -68,6 +68,6 @@ Run the `post` command from your brief with this JSON on stdin:
 }
 ```
 
-It posts the labeled comment on the pull request and prints the score. If it refuses, it says why: fix that and run it again. If the head has moved, check out the new head and review it.
+It posts the labeled comment on the pull request, removes the file and prints the score. If it refuses, it says why: fix the file and run it again. If the head has moved, check out the new head and review it.
 
 Then post the score and the verdict's link in the ticket thread, in one or two lines. Finally, `git checkout <the branch from step 1>`, so your worktree is left as you got it.

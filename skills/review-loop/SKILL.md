@@ -20,7 +20,7 @@ Do what `action` says, then run it again. Exit code 4 means the pull request can
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" start --issue <ticket> --pr <n> --owner <owner> --project <number> --thread <thread-id>`,
   then dispatch it as `cistack:dispatch` does, with the `brief` followed by `message` as its prompt. A coder that ends without posting its marks gets the reason put right and the message again.
 - **`passed`**: the loop is over for this commit. Say so in the ticket thread and the project channel, with the pull request's link, the score and the commit. QA and merging aren't available yet, so it waits for the owner's review and merge. A later push starts a new round.
-- **`escalate`**: the pull request hasn't passed by round 5, so the owner decides. Post in the project channel: the pull request's link, the score, each open finding with the coder's answer, and what you would do. Start nothing more on it until they answer. If they want another round, add `--owner-ok` to `next`, this time and for that round only.
+- **`escalate`**: the pull request hasn't passed by round 5, so the owner decides. Post in the project channel: the pull request's link, the score, each open finding, where the coder and the reviewer disagreed (the pull request's comments hold both), and what you would do. Start nothing more on it until they answer. If they want another round, run `next` with `--owner-ok` until that round's verdict is posted, then without it.
 
 ## Who handles a round
 

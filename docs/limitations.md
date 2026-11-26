@@ -24,7 +24,11 @@ A subagent can call Claude Code's built-in `security-review` skill (checked on 2
 
 ## The reviewer only reads by instruction
 
-The reviewer has no file-editing tools, but it has a shell. Nothing yet stops that shell from changing files; hooks that do come with merging.
+The reviewer has no editing tool, but it has a shell, and the Write tool for its verdict file. Nothing yet stops either from changing files in its worktree; hooks that do come with merging.
+
+## Verdicts and answers go through a file
+
+Claude Code refuses a shell command holding JSON from an agent that works in its own worktree ("too complex to verify"), and asks you about it in other sessions (checked on 2.1.332). So the reviewer and the coder write their JSON to a file and give `scripts/review.mjs` its path. The script removes the file after posting.
 
 ## Away from your machine
 

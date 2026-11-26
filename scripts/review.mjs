@@ -2,6 +2,8 @@
 // The mechanical half of the review loop.
 //
 // The rounds live on the pull request, as labeled comments that also carry their data.
+// Verdicts and answers come in a file the agent writes: Claude Code refuses or asks about
+// a shell command with JSON in it. The file is removed once its comment is posted.
 // The loop stops when a verdict has a full score on the head. Rounds 1-2 are the
 // coder's to answer, 3-4 the coordinator's, and from round 5 the owner decides.
 //
@@ -10,24 +12,24 @@
 //     For the coordinator: what the pull request needs now (review, answer, passed or
 //     escalate), the brief for a fresh reviewer or the message for the coder.
 //     --owner-ok: the owner allowed going on past round 5.
-//   node scripts/review.mjs post --pr <n>   (verdict as JSON on stdin)
+//   node scripts/review.mjs post --pr <n> --file <verdict.json>
 //     For the reviewer: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
 //     "findings": [{"item", "where", "problem"}], "securityReview": "built-in"|"fallback: <why>",
 //     "rulings": [{"finding", "ruling": "upheld"|"dismissed", "reason"}] (one per dispute)}
-//   node scripts/review.mjs answer --pr <n>   (answers as JSON on stdin)
+//   node scripts/review.mjs answer --pr <n> --file <answers.json>
 //     For the coder, once any fixes are pushed: {"answers": [{"finding": "R1-1",
 //     "mark": "fix"|"dispute"|"duplicate", "reason" (dispute), "of" (duplicate), "note"}]}
 //
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh failed,
 // 3 token lacks the project scope, 4 refused.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { cistackPath, writeCistack } from "./lib/project.mjs";
 
-const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> | answer --pr <n>";
+const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
 // What every reviewer scores, in this order. The score is the number that pass.
 const CHECKLIST = ["ticket criteria", "standards", "security", "risk"];
 // A pull request that hasn't passed by this round goes to the owner.
@@ -45,10 +47,13 @@ const refuse = (message) => die(message, 4);
 
 function parseArgs(argv) {
   const [command, flag, pr, ...rest] = argv;
-  const ownerOk = command === "next" && rest[0] === "--owner-ok";
-  const extra = rest.length - Number(ownerOk);
-  if (!["next", "post", "answer"].includes(command) || flag !== "--pr" || !/^\d+$/.test(pr ?? "") || extra) die(USAGE);
-  return { command, pr: Number(pr), ownerOk };
+  const valid = {
+    next: () => rest.length === 0 || (rest.length === 1 && rest[0] === "--owner-ok"),
+    post: () => rest.length === 2 && rest[0] === "--file",
+    answer: () => rest.length === 2 && rest[0] === "--file",
+  };
+  if (!Object.hasOwn(valid, command) || flag !== "--pr" || !/^\d+$/.test(pr ?? "") || !valid[command]()) die(USAGE);
+  return { command, pr: Number(pr), ownerOk: rest[0] === "--owner-ok", file: rest[1] };
 }
 
 const readCistack = (file) => {
@@ -83,19 +88,30 @@ function score(verdict) {
   return `${CHECKLIST.length - failed.length}/${CHECKLIST.length}${failed.length ? `: ${failed.join(", ")}` : ""}`;
 }
 
-function readInput() {
+function readInput(file) {
+  let json;
   try {
-    return JSON.parse(readFileSync(0, "utf8"));
+    json = readFileSync(file, "utf8");
   } catch (error) {
-    return die(`Give the JSON on stdin. ${error.message}`);
+    die(`Can't read ${file}: ${error.message}`);
   }
+  try {
+    return JSON.parse(json);
+  } catch (error) {
+    return die(`${file} isn't JSON. ${error.message}`);
+  }
+}
+
+function oneLine(value, what) {
+  if (typeof value !== "string" || !value.trim()) refuse(`Give ${what}.`);
+  return value.trim().replace(/\s+/g, " ");
 }
 
 // One line of an agent's own words. A bare @name would notify whoever holds that login.
 function text(value, what) {
-  if (typeof value !== "string" || !value.trim()) refuse(`Give ${what}.`);
-  const line = value.trim().replace(/\s+/g, " ");
-  if (/(^|[^\w])@[A-Za-z0-9]/.test(line.replace(/(`+).+?\1/g, ""))) {
+  const line = oneLine(value, what);
+  // A code span closes only on as many backticks as opened it.
+  if (/(^|[^\w])@[A-Za-z0-9]/.test(line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, ""))) {
     refuse(`Never write @name on GitHub: put role names and code in backticks. In: ${line}`);
   }
   return line;
@@ -123,7 +139,7 @@ function checkedVerdict(input, pr, round, disputes) {
   const findings = (input.findings ?? []).map((f, i) => ({
     id: `R${round}-${i + 1}`,
     item: f.item,
-    where: text(f.where, "each finding's `where` (path:line)").replaceAll("`", ""),
+    where: oneLine(f.where, "each finding's `where` (path:line)").replaceAll("`", ""),
     problem: text(f.problem, "each finding's `problem`"),
   }));
   for (const item of CHECKLIST) {
@@ -205,18 +221,19 @@ function progress(pr) {
 const comment = (pr, body) => gh(["pr", "comment", String(pr.number), "--body-file", "-"], { input: body }).trim();
 
 function post(opts) {
-  const input = readInput();
+  const input = readInput(opts.file);
   const pr = pullRequest(opts.pr);
   const { verdicts, latest, action, disputes } = progress(pr);
   if (action === "passed") refuse(`Pull request #${pr.number} already passed review at ${pr.head}.`);
   if (action === "answer") refuse(`Round ${latest.round} of pull request #${pr.number} isn't answered yet.`);
   const verdict = checkedVerdict(input, pr, verdicts.length + 1, disputes);
   const url = comment(pr, verdictComment(verdict));
+  unlinkSync(opts.file);
   return { pr: pr.number, round: verdict.round, head: verdict.head, score: score(verdict), findings: verdict.findings, url };
 }
 
 function answer(opts) {
-  const input = readInput();
+  const input = readInput(opts.file);
   const pr = pullRequest(opts.pr);
   const { verdicts, latest } = progress(pr);
   if (!latest || !failing(latest).length) refuse(`Pull request #${pr.number} has no findings to answer.`);
@@ -233,6 +250,7 @@ function answer(opts) {
       ...answers.map(answerLine),
     ].join("\n"),
   );
+  unlinkSync(opts.file);
   return { pr: pr.number, round: latest.round, answers, url };
 }
 
@@ -242,12 +260,18 @@ function answerMessage(pr, verdict) {
     "",
     ...verdict.findings.map(findingLine),
     "",
-    "Check each finding against the code, then mark every one fix, dispute (with a reason) or duplicate (of which finding). Fix test-first, run the agreed checks, commit and push, then post your marks:",
+    "Check each finding against the code, then mark every one fix, dispute (with a reason) or duplicate (of which finding). Fix test-first, run the agreed checks, commit and push.",
+    "",
+    "Then write your marks with the Write tool to `cistack-answers.json` in your worktree:",
+    "",
+    "```json",
+    '{"answers": [{"finding": "<id>", "mark": "fix"}, {"finding": "<id>", "mark": "dispute", "reason": "<why>"}, {"finding": "<id>", "mark": "duplicate", "of": "<id>"}]}',
+    "```",
+    "",
+    "and post them, giving the file's absolute path. The script removes the file:",
     "",
     "```",
-    `node "${reviewScript}" answer --pr ${pr.number} <<'EOF'`,
-    '{"answers": [{"finding": "<id>", "mark": "fix"}, {"finding": "<id>", "mark": "dispute", "reason": "<why>"}, {"finding": "<id>", "mark": "duplicate", "of": "<id>"}]}',
-    "EOF",
+    `node "${reviewScript}" answer --pr ${pr.number} --file <your worktree>/cistack-answers.json`,
     "```",
   ].join("\n");
 }
@@ -262,7 +286,7 @@ function reviewerBrief(pr, round, { disputes, settled }) {
     `- Ticket: \`gh issue view ${pr.issue} --json number,title,body,comments\`. Read it yourself.`,
     ...(spec ? [`- Spec: \`gh issue view ${spec} --json title,body\`.`] : []),
     `- Check out the head in your own worktree: \`git fetch origin ${pr.base} pull/${pr.number}/head\`, then \`git checkout --detach ${pr.head}\`.`,
-    `- Post your verdict with \`node "${reviewScript}" post --pr ${pr.number}\`, giving the JSON on stdin.`,
+    `- Post your verdict: write the JSON to \`cistack-verdict.json\` in your worktree with the Write tool, then run \`node "${reviewScript}" post --pr ${pr.number} --file cistack-verdict.json\`.`,
   ];
   if (disputes.length) {
     lines.push("- Rule on each dispute in `rulings`, upheld or dismissed, with a reason. An upheld one is a finding again:");

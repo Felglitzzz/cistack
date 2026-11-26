@@ -5,10 +5,11 @@
 //   node scripts/dispatch.mjs check --issue <n>
 //     Can this ticket be dispatched? Changes nothing.
 //   node scripts/dispatch.mjs start --issue <n> --owner <owner> --project <number> [--thread <thread-id>] [--pr <n>]
-//     Creates the ticket's worktree and branch, copies the setup files in, moves the
-//     ticket to In progress, records the coder in .cistack/status.json and prints
-//     the brief to dispatch it with. With --pr <n>, the ticket's pull request is already
-//     open: the coder is there to answer its review, and the ticket stays In review.
+//     Creates the ticket's worktree and branch, copies the setup files in (none may set
+//     a variable the agent environment withholds), moves the ticket to In progress,
+//     records the coder in .cistack/status.json and prints the brief to dispatch it
+//     with. With --pr <n>, the ticket's pull request is already open: the coder is there
+//     to answer its review or QA, and the ticket is moved to In review.
 //   node scripts/dispatch.mjs opened --issue <n> --pr <n> --owner <owner> --project <number>
 //     Checks the coder's pull request closes the ticket, then moves it to In review.
 //
@@ -17,23 +18,20 @@
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardStatus } from "./lib/board.mjs";
+import { die, refuse } from "./lib/cli.mjs";
+import { environment, setupFiles } from "./lib/docs.mjs";
+import { refuseWithheld } from "./lib/env-files.mjs";
 import { ghJson } from "./lib/gh.mjs";
-import { cistackPath, projectRoot, writeCistack } from "./lib/project.mjs";
+import { git, onBase } from "./lib/git.mjs";
+import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 
 const USAGE = "usage: dispatch.mjs check --issue <n> | start --issue <n> --owner <owner> --project <number> [--thread <id>] [--pr <n>] | opened --issue <n> --pr <n> --owner <owner> --project <number>";
 const RESUME = "Run the same command again to finish.";
 const REQUIRED_ON_BASE = ["docs/agents/issue-tracker.md", "docs/agents/commands.md"];
 const discordScript = join(dirname(fileURLToPath(import.meta.url)), "discord.mjs");
-
-function die(message, code = 1) {
-  console.error(message);
-  process.exit(code);
-}
-
-const refuse = (message) => die(message, 4);
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -46,18 +44,7 @@ function parseArgs(argv) {
   return { command, ...opts, issue: Number(opts.issue) };
 }
 
-function git(cwd, ...args) {
-  try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  } catch (error) {
-    die(`git ${args.join(" ")} failed: ${(error.stderr || error.message).trim()}`, 2);
-  }
-}
-
-const readStatus = () => {
-  const path = cistackPath("status.json");
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
-};
+const readStatus = () => readCistack("status.json");
 
 const ISSUE = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -81,7 +68,7 @@ function unmerged({ number, state, closedByPullRequestsReferences }) {
 }
 
 // The ticket and the repository's base branch, once the ticket is ready for a coder.
-// `pr` is the ticket's open pull request, when the coder is there to answer its review.
+// `pr` is the ticket's open pull request, when the coder is there to answer its review or QA.
 function dispatchable(number, pr) {
   const repo = ghJson(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]);
   const [owner, name] = repo.nameWithOwner.split("/");
@@ -98,20 +85,6 @@ function dispatchable(number, pr) {
   if (waiting.length) refuse(`#${number} is blocked: ${waiting.join("; ")}.`);
 
   return { issue, base: repo.defaultBranchRef.name };
-}
-
-// The paths bulleted under "## Worktree setup" in docs/agents/commands.md.
-function setupFiles(root) {
-  const path = join(root, "docs/agents/commands.md");
-  if (!existsSync(path)) die(`No ${path}. Run /cistack:onboard first.`);
-  const section = readFileSync(path, "utf8").split(/^## Worktree setup\s*$/m)[1]?.split(/^## /m)[0] ?? "";
-  const files = [...section.matchAll(/^\s*[-*]\s+(?:`([^`]+)`|([^\s`]+))/gm)].map((m) => m[1] ?? m[2]);
-  for (const file of files) {
-    const inside = relative(root, resolve(root, file));
-    if (!inside || inside.startsWith("..") || isAbsolute(inside)) die(`Setup file ${file} is outside the repository. Fix docs/agents/commands.md.`);
-    if (!existsSync(join(root, file))) die(`Setup file ${file} is not in the main checkout. Create it, or fix docs/agents/commands.md.`);
-  }
-  return files;
 }
 
 const slug = (title) => title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-|-$/g, "") || "ticket";
@@ -143,9 +116,10 @@ function ticketWorktree(root, { number, title }, base, mustExist) {
   return { worktree, branch, resumed: false };
 }
 
-function brief({ name, issue, worktree, branch, base, resumed, files, thread, pr }) {
+function brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr }) {
+  const unset = withheld.length ? `unset ${withheld.join(" ")} && ` : "";
   const task = pr
-    ? `Answer the review of pull request #${pr} for ticket #${issue.number}, "${issue.title}". The findings follow this brief.`
+    ? `Answer the review or QA of pull request #${pr} for ticket #${issue.number}, "${issue.title}". What to answer follows this brief.`
     : `Implement ticket #${issue.number}, "${issue.title}", and open its pull request.`;
   const branchLine = pr
     ? `- Branch: \`${branch}\`, already checked out, with its pull request open against \`origin/${base}\`. Push to it; open no other.`
@@ -156,7 +130,7 @@ function brief({ name, issue, worktree, branch, base, resumed, files, thread, pr
     `- Ticket: \`gh issue view ${issue.number} --json number,title,body,comments\`. Read it yourself; it outranks anything said about it.`,
     ...(issue.parent ? [`- Spec: \`gh issue view ${issue.parent.number} --json title,body\`.`] : []),
     `- Worktree: \`${worktree}\`. Work only there, and give file tools absolute paths under it.`,
-    `- Shell: your \`cd\` is forgotten between commands. Run git as \`git -C "${worktree}" <command>\`, and the project's commands as \`cd "${worktree}" && <command>\`. Never put \`cd\` and git in one command: the owner is asked to approve each one.`,
+    `- Shell: your \`cd\` is forgotten between commands. Run git as \`git -C "${worktree}" <command>\`, and the project's commands as \`cd "${worktree}" && ${unset}<command>\`.${withheld.length ? " The `unset` keeps live integration credentials out; never leave it off." : ""} Never put \`cd\` and git in one command: the owner is asked to approve each one.`,
     branchLine,
     `- Setup files copied in: ${files.length ? files.map((f) => `\`${f}\``).join(", ") : "none"}.`,
   ];
@@ -177,10 +151,7 @@ function brief({ name, issue, worktree, branch, base, resumed, files, thread, pr
   return lines.join("\n");
 }
 
-function hasCoderWebhook() {
-  const path = cistackPath("discord.json");
-  return existsSync(path) && Boolean(JSON.parse(readFileSync(path, "utf8")).webhooks?.coder);
-}
+const hasCoderWebhook = () => Boolean(readCistack("discord.json").webhooks?.coder);
 
 function start(opts) {
   const { issue, base } = dispatchable(opts.issue, opts.pr);
@@ -195,7 +166,12 @@ function start(opts) {
       die(`${path} is not on origin/${base}, so the coder's worktree wouldn't have it. Commit and merge onboarding's files first.`);
     }
   }
-  const files = setupFiles(root);
+  const commandsPath = join(root, "docs/agents/commands.md");
+  if (!existsSync(commandsPath)) die(`No ${commandsPath}. Run /cistack:onboard first.`);
+  const files = setupFiles(readFileSync(commandsPath, "utf8"), root);
+  // A project onboarded before the environment slots has no environments doc yet.
+  const { withheld } = environment(onBase(root, base, "docs/agents/environments.md") ?? "");
+  for (const file of files) refuseWithheld(root, file, withheld);
 
   const { worktree, branch, resumed } = ticketWorktree(root, issue, base, Boolean(opts.pr));
   for (const file of files) cpSync(join(root, file), join(worktree, file), { recursive: true, force: false });
@@ -209,7 +185,7 @@ function start(opts) {
   writeCistack("status.json", state);
 
   const thread = hasCoderWebhook() ? opts.thread : undefined;
-  return { name, issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, thread, pr: opts.pr }) };
+  return { name, issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr: opts.pr }) };
 }
 
 function opened(opts) {

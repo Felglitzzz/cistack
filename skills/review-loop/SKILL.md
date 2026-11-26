@@ -8,8 +8,10 @@ description: For the cistack coordinator only. Run the review loop on a ticket's
 Every step starts with the script. It reads the rounds from the pull request and says what happens now, so don't count rounds or judge a pass from memory:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n> --owner <owner> --project <number>
 ```
+
+The board's owner and number are in `docs/agents/issue-tracker.md`. Run it after every push to the pull request, too: a push after a pass moves the ticket back to In review.
 
 Do what `action` says, then run it again. Exit code 4 means the pull request can't be reviewed, and says why: tell the owner.
 
@@ -19,7 +21,7 @@ Do what `action` says, then run it again. Exit code 4 means the pull request can
 - **`answer`**: send `message` to the ticket's coder with SendMessage, word for word. It fixes, pushes and posts its marks. If that coder is gone, remove its entry from `agents` in `.cistack/status.json` and start one with
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" start --issue <ticket> --pr <n> --owner <owner> --project <number> --thread <thread-id>`,
   then dispatch it as `cistack:dispatch` does, with the `brief` followed by `message` as its prompt. A coder that ends without posting its marks gets the reason put right and the message again.
-- **`passed`**: the loop is over for this commit. Say so in the ticket thread and the project channel, with the pull request's link, the score and the commit. QA and merging aren't available yet, so it waits for the owner's review and merge. A later push needs a new round; `next` says whether it can start one or the owner has to allow it.
+- **`passed`**: the loop is over for this commit. Say so in the ticket thread and the project channel, with the pull request's link, the score and the commit. Go on to QA with the `cistack:qa-loop` skill. A later push needs a new round; `next` says whether it can start one or the owner has to allow it.
 - **`escalate`**: round 4 didn't end with a pass on the head, so the owner decides before anything else runs, a 5th review included. Post in the project channel: the pull request's link, the score, each open finding, where the coder and the reviewer disagreed (the pull request's comments hold both), and what you would do. Start nothing more on it until they answer. If they want another round, run `next` with `--owner-ok` until that round's verdict is posted, then without it.
 
 ## Who handles a round

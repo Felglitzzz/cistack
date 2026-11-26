@@ -1,6 +1,6 @@
 ---
 name: implement
-description: For cistack coders only. Implement one ticket in the coder's worktree, from reading it to opening its pull request, and answer its review.
+description: For cistack coders only. Implement one ticket in the coder's worktree, from reading it to opening its pull request, and answer its review and QA.
 user-invocable: false
 ---
 
@@ -58,3 +58,7 @@ The coordinator comes back to you, or dispatches you, with a review round's find
 Don't change code you believe is right to get a pass. A fresh reviewer rules on your disputes next round.
 
 Commit your fixes, run the agreed checks on the new commit as in step 4, push, and update the commit and results in the pull request's body. Then post your marks with the command in the message, and report.
+
+## Answering a failed QA run
+
+The coordinator sends what QA found failing. Check each one against the code and, where you can, run it yourself. Fix what stands with the `cistack:tdd` skill, run the agreed checks on the new commit, push, and update the commit and results in the pull request's body. If you believe one is wrong, give your evidence instead of changing the code. Then report: what you did about each, the pushed commit and the checks' results. There are no marks to post.

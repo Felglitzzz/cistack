@@ -9,9 +9,10 @@
 // the owner, and no 5th review starts until they answer.
 //
 // Usage:
-//   node scripts/review.mjs next --pr <n> [--owner-ok]
+//   node scripts/review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok]
 //     For the coordinator: what the pull request needs now (review, answer, passed or
-//     escalate), the brief for a fresh reviewer or the message for the coder.
+//     escalate), the brief for a fresh reviewer or the message for the coder. A push
+//     after a pass moves the ticket back to In review.
 //     --owner-ok: the owner allowed going on past round 4.
 //   node scripts/review.mjs post --pr <n> --file <verdict.json>
 //     For the reviewer: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
@@ -24,98 +25,39 @@
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh failed,
 // 3 token lacks the project scope, 4 refused.
 
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { boardStatus } from "./lib/board.mjs";
+import { die, oneLine, readInput, refuse, text } from "./lib/cli.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
-import { cistackPath, writeCistack } from "./lib/project.mjs";
+import { readCistack, writeCistack } from "./lib/project.mjs";
+import { CHECKLIST, failing, marker, pullRequest, records, reviewPassed } from "./lib/pr.mjs";
 
-const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
-// What every reviewer scores, in this order. The score is the number that pass.
-const CHECKLIST = ["ticket criteria", "correctness", "standards", "security", "risk"];
+const USAGE = "usage: review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
 // The last round that needs no word from the owner.
 const LAST_ROUND = 4;
 const here = dirname(fileURLToPath(import.meta.url));
 const reviewScript = join(here, "review.mjs");
 const discordScript = join(here, "discord.mjs");
 
-function die(message, code = 1) {
-  console.error(message);
-  process.exit(code);
-}
-
-const refuse = (message) => die(message, 4);
-
 function parseArgs(argv) {
   const [command, flag, pr, ...rest] = argv;
+  const [ownerFlag, owner, projectFlag, project, ...extra] = rest;
   const valid = {
-    next: () => rest.length === 0 || (rest.length === 1 && rest[0] === "--owner-ok"),
+    next: () =>
+      ownerFlag === "--owner" && Boolean(owner) && projectFlag === "--project" && /^\d+$/.test(project ?? "") &&
+      (extra.length === 0 || (extra.length === 1 && extra[0] === "--owner-ok")),
     post: () => rest.length === 2 && rest[0] === "--file",
     answer: () => rest.length === 2 && rest[0] === "--file",
   };
   if (!Object.hasOwn(valid, command) || flag !== "--pr" || !/^\d+$/.test(pr ?? "") || !valid[command]()) die(USAGE);
-  return { command, pr: Number(pr), ownerOk: rest[0] === "--owner-ok", file: rest[1] };
+  return { command, pr: Number(pr), owner, project, ownerOk: extra[0] === "--owner-ok", file: rest[1] };
 }
-
-const readCistack = (file) => {
-  const path = cistackPath(file);
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
-};
-
-function pullRequest(number) {
-  const pr = ghJson(["pr", "view", String(number), "--json", "state,url,headRefOid,baseRefName,closingIssuesReferences,comments"]);
-  if (pr.state !== "OPEN") refuse(`Pull request #${number} is ${pr.state.toLowerCase()}.`);
-  const issue = pr.closingIssuesReferences[0]?.number;
-  if (!issue) refuse(`Pull request #${number} closes no ticket. Its body needs "Closes #<ticket>".`);
-  return { number, issue, url: pr.url, head: pr.headRefOid, base: pr.baseRefName, comments: pr.comments };
-}
-
-// A comment carries its data in a first line GitHub doesn't show.
-const marker = (kind, data) => `<!-- cistack:${kind} ${Buffer.from(JSON.stringify(data)).toString("base64")} -->`;
-
-// Only comments posted with this login count: anyone can write the same words on a public repo.
-function records(pr, kind) {
-  const pattern = new RegExp(`^<!-- cistack:${kind} ([A-Za-z0-9+/=]+) -->`);
-  return pr.comments.flatMap((comment) => {
-    const data = comment.viewerDidAuthor && comment.body.match(pattern)?.[1];
-    return data ? [{ ...JSON.parse(Buffer.from(data, "base64").toString("utf8")), url: comment.url }] : [];
-  });
-}
-
-const failing = ({ checklist }) => CHECKLIST.filter((item) => checklist[item] === "fail");
 
 function score(verdict) {
   const failed = failing(verdict);
   return `${CHECKLIST.length - failed.length}/${CHECKLIST.length}${failed.length ? `: ${failed.join(", ")}` : ""}`;
-}
-
-function readInput(file) {
-  let json;
-  try {
-    json = readFileSync(file, "utf8");
-  } catch (error) {
-    die(`Can't read ${file}: ${error.message}`);
-  }
-  try {
-    return JSON.parse(json);
-  } catch (error) {
-    return die(`${file} isn't JSON. ${error.message}`);
-  }
-}
-
-function oneLine(value, what) {
-  if (typeof value !== "string" || !value.trim()) refuse(`Give ${what}.`);
-  return value.trim().replace(/\s+/g, " ");
-}
-
-// One line of an agent's own words. A bare @name would notify whoever holds that login.
-function text(value, what) {
-  const line = oneLine(value, what);
-  // A code span closes only on as many backticks as opened it.
-  if (/(^|[^\w])@[A-Za-z0-9]/.test(line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, ""))) {
-    refuse(`Never write @name on GitHub: put role names and code in backticks. In: ${line}`);
-  }
-  return line;
 }
 
 // The reviewer's word on each finding the coder disputed.
@@ -211,7 +153,7 @@ function progress(pr) {
   const answers = latest && records(pr, "answers").findLast((a) => a.round === latest.round);
   let action = "review";
   if (latest && failing(latest).length) action = answers ? "review" : "answer";
-  else if (latest?.head === pr.head) action = "passed";
+  else if (reviewPassed(pr)) action = "passed";
 
   const raised = new Map(verdicts.flatMap((v) => v.findings.map((f) => [f.id, f])));
   const disputes = (answers?.answers ?? []).filter((a) => a.mark === "dispute").map((a) => ({ ...raised.get(a.finding), reason: a.reason }));
@@ -313,10 +255,17 @@ function recordRound(pr, round) {
   writeCistack("status.json", status);
 }
 
+// An earlier pass doesn't cover what was pushed since, so the ticket is in review again.
+function backToReview(pr, opts) {
+  const move = boardStatus({ owner: opts.owner, number: opts.project, status: "In review", hint: "Run the same command again to finish." });
+  move(ghJson(["issue", "view", String(pr.issue), "--json", "url"]).url);
+}
+
 function next(opts) {
   const pr = pullRequest(opts.pr);
   const state = progress(pr);
   const { verdicts, latest, answers } = state;
+  if (state.action !== "passed" && verdicts.some((v) => !failing(v).length)) backToReview(pr, opts);
   const capped = state.action !== "passed" && verdicts.length >= LAST_ROUND && !opts.ownerOk;
   const action = capped ? "escalate" : state.action;
   const round = action === "review" ? verdicts.length + 1 : latest.round;

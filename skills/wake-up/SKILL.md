@@ -25,23 +25,23 @@ Read `.cistack/status.json`; a missing file means an empty state. Then read GitH
 - Board items and their statuses: `gh project item-list <number> --owner <owner> --format json --limit 200`, using the board in `docs/agents/issue-tracker.md`.
 - Open pull requests: `gh pr list --state open --json number,title,headRefName,isDraft`.
 
-For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n>` says where its review stands. Only read it: start no reviewer or coder before the owner asks.
+For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n> --owner <owner> --project <number>` says where its review stands, and moves the ticket back to In review if something was pushed after a pass. Where it says `passed`, `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" next --pr <n>` says where its QA stands. Only read them: start no reviewer, QA or coder before the owner asks.
 
-GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove every entry in `agents`: an agent from an earlier session is no longer running. Its worktree stays. Keep `coderCount`. Note any open issue in In progress, In review or In QA that has no pull request: dispatching it again continues in its worktree.
+GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove every entry in `agents`: an agent from an earlier session is no longer running. A coder's worktree stays. A QA worktree holds no work, so for each QA entry run `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" done --pr <n>`, which removes both. Do this before asking where QA stands. Keep `coderCount`. Note any open issue in In progress, In review or In QA that has no pull request: dispatching it again continues in its worktree.
 
 Keep `grilling` entries: they have no issue yet, and each is a request still waiting on the owner. Check `.cistack/plans/*/plan.json` too. A plan where some entries have a `number` but not every entry has `onBoard` was interrupted while publishing: offer to finish it with the `cistack:to-tickets` skill's publish step.
 
 ## 3. Find leftover worktrees
 
-`git worktree list --porcelain`. For every worktree other than the main checkout, note its branch, whether the branch is merged into the base branch (`git branch --merged <base>`), and whether it has uncommitted changes (`git -C <path> status --porcelain`). List them. Never delete a worktree with unmerged or uncommitted work without the owner's explicit OK. Offer to remove the ones that are merged and clean.
+`git worktree list --porcelain`. For every worktree other than the main checkout, note its branch, whether the branch is merged into the base branch (`git branch --merged <base>`), and whether it has uncommitted changes (`git -C <path> status --porcelain`). List them. Never delete a worktree with unmerged or uncommitted work without the owner's explicit OK. The exception is a QA worktree (`.../cistack-qa-*/pr-<n>`), which `qa.mjs done --pr <n>` removes. Offer to remove the ones that are merged and clean.
 
 ## 4. Report
 
 Post one short message to the project channel with the `reply` tool, or print it if Discord isn't connected:
 
 - open specs, and their tickets by status: todo, in progress, in review, in QA, blocked;
-- each open pull request's review: its round and score, or that it passed;
-- what is waiting on the owner, including unfinished grilling, interrupted publishing and escalated reviews;
+- each open pull request's review: its round and score, or that it passed, and then where its QA stands;
+- what is waiting on the owner, including unfinished grilling, interrupted publishing, escalated reviews and unverified QA runs;
 - anything that disagreed with GitHub and how you resolved it;
 - leftover worktrees.
 

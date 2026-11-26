@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.4.0, early.** Onboarding, the coordinator's wake-up and planning work, with Discord. Coders, review and QA are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.5.0, early.** Onboarding, the coordinator's wake-up, planning and coder dispatch work, with Discord. One coder builds at a time; review, QA and merging are not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -42,6 +42,10 @@ On Discord, the coordinator is the bot. The other roles post through their own w
 ## Plan work
 
 Tell the coordinator what you want, in the terminal or the project channel. It opens a spec thread and grills you in numbered rounds, each question with a recommended answer. Terms and hard-to-reverse decisions go into your project's `GLOSSARY.md` and `docs/adr/` as you settle them. Once you confirm shared understanding, it publishes a spec issue with ticket sub-issues, linked by their blockers, in Todo on the board.
+
+## Build a ticket
+
+Ask the coordinator to build a ticket whose blockers have merged. It opens a ticket thread, gives a fresh coder its own worktree under `.claude/worktrees/` with your setup files copied in, and moves the card to In progress. The coder works test-first, runs your agreed checks, and opens a pull request that closes the ticket; the card moves to In review. Until review and QA are built, you review and merge it. Onboarding's `docs/agents/` files must be on the base branch first.
 
 ## Develop locally
 

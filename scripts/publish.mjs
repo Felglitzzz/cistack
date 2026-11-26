@@ -16,6 +16,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { boardStatus } from "./lib/board.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { cistackPath, writeCistack } from "./lib/project.mjs";
 
@@ -98,11 +99,7 @@ const { plan, specBody, ordered } = readPlan(planPath);
 const save = () => writeFileSync(planPath, JSON.stringify(plan, null, 2) + "\n");
 
 // Look the board up before creating anything, so a wrong board publishes nothing.
-const board = ["--owner", opts.owner, "--format", "json"];
-const projectId = ghJson(["project", "view", opts.project, ...board]).id;
-const statusField = ghJson(["project", "field-list", opts.project, ...board, "--limit", "50"]).fields.find((f) => f.name === "Status");
-const todo = statusField?.options.find((o) => o.name.toLowerCase() === "todo");
-if (!todo) die(`Board #${opts.project} has no Todo status. Run /cistack:onboard again.`);
+const moveToTodo = boardStatus({ owner: opts.owner, number: opts.project, status: "Todo", hint: RESUME });
 
 function create(entry, body) {
   if (entry.number) return;
@@ -127,11 +124,10 @@ function link(entry, parent, blockedBy) {
   save();
 }
 
-// Adding is safe to repeat. Todo is set only once, so a rerun never drags a ticket back.
+// Todo is set only once, so a rerun never drags a ticket back.
 function addToBoard(entry) {
   if (entry.onBoard) return;
-  const { id } = ghJson(["project", "item-add", opts.project, ...board, "--url", entry.url], { hint: RESUME });
-  gh(["project", "item-edit", "--project-id", projectId, "--id", id, "--field-id", statusField.id, "--single-select-option-id", todo.id], { hint: RESUME });
+  moveToTodo(entry.url);
   entry.onBoard = true;
   save();
 }

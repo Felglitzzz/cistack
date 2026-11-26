@@ -89,4 +89,4 @@ Post the spec issue's link and the tickets, with their blockers, in the spec thr
 
 If grilling changed the glossary or ADRs, list those files and offer to commit them, and only them, on a new branch and open a pull request. Coders work from committed files, so they won't see these until then.
 
-Dispatching coders isn't available in this version yet. Say so, and stop.
+Then offer to dispatch the first unblocked ticket with the `cistack:dispatch` skill, and wait for the owner.

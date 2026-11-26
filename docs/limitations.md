@@ -14,6 +14,10 @@ A GitHub Project's built-in workflows (Item added to project, Item closed, Auto-
 
 Wake-up tells whether the session was started with the Discord channel by reading its launch flags with `ps`. Where there is no `ps`, as on Windows, it reports in the terminal only.
 
+## Coders ask for permission like any session
+
+A coder runs under your session's permission mode. Claude Code ignores `permissionMode` on a plugin's agent, so cistack can't loosen it. Expect prompts for the commands a coder runs (your project's commands, `git`, `gh`, and the Discord post) unless your settings allow them.
+
 ## The coordinator can't wake itself
 
 Claude Code ignores `initialPrompt` on an agent that comes from a plugin (checked on 2.1.332, interactive and `-p`), so the launch command has to pass `/cistack:wake-up` itself.

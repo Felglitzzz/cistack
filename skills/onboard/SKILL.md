@@ -46,7 +46,7 @@ Issues live in this repo's GitHub issues. Tickets are sub-issues of their spec, 
 ### B. Commands and worktree setup
 
 1. Propose install, test, lint, build and end-to-end commands from what you found. Each can be `none`. Prefer the commands CI runs.
-2. Propose the gitignored files a coder's worktree needs copied from the main checkout. Check each one exists and is gitignored. A tracked file needs no copying.
+2. Propose the gitignored files a coder's worktree needs copied from the main checkout. Check each one exists and is gitignored. A tracked file needs no copying. Each is a file or folder path from the repo root, with no wildcards: dispatch copies exactly what is listed.
 
 ### D. Domain docs
 
@@ -69,13 +69,13 @@ The coordinator is the Discord bot, through the official Discord plugin. Every o
 Fill the templates and show every file before writing. Let the owner edit them.
 
 - [templates/issue-tracker.md](templates/issue-tracker.md) → `docs/agents/issue-tracker.md`, using the board script's JSON.
-- [templates/commands.md](templates/commands.md) → `docs/agents/commands.md`. List setup files as bullets, or write `None.`
+- [templates/commands.md](templates/commands.md) → `docs/agents/commands.md`. List setup files as bullets, one per bullet with the path in backticks, or write `None.`
 - [templates/domain.md](templates/domain.md) → `docs/agents/domain.md`.
 - [templates/agent-skills-block.md](templates/agent-skills-block.md) → the `## Agent skills` block.
 
 ## 5. Write
 
-- Write the three `docs/agents/` files.
+- Write the three `docs/agents/` files. Coders can be dispatched only once these are on the base branch.
 - Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
 - Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Only section E writes there (`.cistack/discord.json`). Discord settings are personal and never go in `docs/agents/`.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Ask the coordinator to build a ticket and `cistack:dispatch` gives it to a fresh `cistack:coder`, in a ticket thread on Discord, one ticket at a time (#7).
+- `scripts/dispatch.mjs` refuses a ticket whose blockers haven't merged, creates the ticket's worktree under `.claude/worktrees/` with your setup files copied in, numbers the coder, moves the card to In progress, and moves it to In review once the pull request closes the ticket (#7).
+- The coder works test-first with adapted `cistack:implement` (no self-review) and `cistack:tdd` skills, runs the agreed checks, opens a pull request, and posts its progress under its own name (#7).
+- Wake-up now clears every agent left from an earlier session. Dispatching its ticket again continues in the same worktree (#7).
+
 ## 0.4.0
 
 - Give the coordinator a request and it grills you on it with `cistack:grill-with-docs`: numbered rounds with recommended answers, in a spec thread on Discord or in the terminal, recording terms and ADRs in your project as they settle (#6).

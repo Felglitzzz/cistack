@@ -23,3 +23,20 @@ export function onBase(root, base, path) {
     return null;
   }
 }
+
+// Like git, but null when it fails.
+export function tryGit(cwd, ...args) {
+  try {
+    return run(cwd, args).trim();
+  } catch {
+    return null;
+  }
+}
+
+// What the commits since the base's merge point change, as `git patch-id` sees it:
+// the same change gives the same id wherever it sits in the history.
+export function patchId(cwd, base, head) {
+  const diff = git(cwd, "diff", git(cwd, "merge-base", `origin/${base}`, head), head);
+  if (!diff) return "";
+  return execFileSync("git", ["patch-id", "--stable"], { cwd, encoding: "utf8", input: `${diff}\n` }).split(" ")[0];
+}

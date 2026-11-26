@@ -24,7 +24,7 @@ A subagent can call Claude Code's built-in `security-review` skill (checked on 2
 
 ## The reviewer only reads by instruction
 
-The reviewer has no editing tool, but it has a shell, and the Write tool for its verdict file. Nothing yet stops either from changing files in its worktree; hooks that do come with merging.
+The reviewer has no editing tool, but it has a shell, and the Write tool for its verdict file. Nothing stops either from changing files in its worktree: the write guard (below) holds coders and QA to their worktrees, not the reviewer.
 
 ## Verdicts and answers go through a file
 
@@ -33,6 +33,15 @@ Claude Code refuses a shell command holding JSON from an agent that works in its
 ## QA's worktree is outside your project
 
 Inside it, Node and other tools would search upwards and find your checkout's installed dependencies and leftover files, so a check could pass on them. QA's worktree is a new directory under the system's temporary directory. Claude Code treats that as outside the project, so expect permission prompts for what QA reads, writes and runs there unless your settings or mode allow them.
+
+## The guard hooks catch what they can read
+
+Three hooks refuse, and log to `.cistack/refusals.log`: a merge without both passes on the head, a push to the base branch, and a coder's or QA's file write outside its worktree. They run only in an onboarded project (one with `docs/agents/issue-tracker.md`), and they fail closed: a call they can't check is refused.
+
+- They read a shell command line, not run it. `gh pr merge` and `git push` are seen through `cd`, `-C`, `&&`, pipes, `sh -c`, `eval` and a leading `VAR=value` or `sudo`. A merge or push assembled where they can't look (a variable, an alias, a script file) is not seen. The merge guard also refuses the API calls that merge a pull request, and the GraphQL merge mutations, since those can't be tied to a pull request.
+- The write guard covers Claude Code's file tools (Write, Edit, MultiEdit, NotebookEdit), not a shell command that redirects output into a file. It learns who is acting from the hook's `agent_type`, which says `cistack:coder` or `cistack:qa` but not which of several coders, so with more than one coder (a later version) it will allow any worktree recorded for the role.
+- Agents act with your GitHub login, so a pass on a pull request is only a comment your login posted. The hooks and scripts count only comments posted with your login, and anything with that login can post one. The owner's override is kept apart for this reason: it is in `.cistack/overrides.json`, written only by `scripts/merge.mjs override`, which the hook refuses to every role but the coordinator, and the write guard keeps coders and QA from editing the file. A shell command from another agent could still write it.
+- Your own terminal isn't guarded: the hooks run for Claude Code's tool calls, not for what you type yourself.
 
 ## QA keeps to its environment mostly by instruction
 

@@ -33,13 +33,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardStatus } from "./lib/board.mjs";
-import { die, readInput, refuse, text } from "./lib/cli.mjs";
+import { die, quoted, readInput, refuse, text } from "./lib/cli.mjs";
 import { agreedCommands, environment, setupFiles } from "./lib/docs.mjs";
 import { refuseWithheld } from "./lib/env-files.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { git, onBase } from "./lib/git.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
-import { marker, pullRequest, records, reviewPassed } from "./lib/pr.mjs";
+import { acceptanceCriteria } from "./lib/criteria.mjs";
+import { marker, pullRequest, qaReport, reviewPassed } from "./lib/pr.mjs";
 
 const USAGE = "usage: qa.mjs next --pr <n> | done --pr <n> | start --pr <n> --owner <owner> --project <number> | copy --pr <n> --path <setup file> | post --pr <n> --file <report.json>";
 
@@ -89,19 +90,9 @@ function agreed(root, base) {
 
 const ticketOf = (pr) => ghJson(["issue", "view", String(pr.issue), "--json", "title,body,url,parent"]);
 
-// The bullets under the ticket's "Acceptance criteria" heading, as C1, C2 and so on.
+// The ticket's acceptance criteria, as C1, C2 and so on.
 function criteria(pr, ticket) {
-  const [, level, rest = ""] = ticket.body.replace(/\r\n/g, "\n").split(/^(#{2,})[ \t]*Acceptance criteria[ \t]*$/im);
-  // The section runs to the next heading that isn't one of its own subheadings.
-  const within = level ? rest.split(new RegExp(`^#{1,${level.length}}[ \\t]`, "m"))[0] : "";
-  const found = [];
-  let open = false;
-  for (const line of within.split("\n")) {
-    const bullet = line.match(/^(?:[-*]|\d+\.)[ \t]+(?:\[[ xX]\][ \t]+)?(.+)$/);
-    if (bullet) found.push(bullet[1].trim());
-    else if (open && /^[ \t]+\S/.test(line)) found[found.length - 1] += ` ${line.trim()}`;
-    open = Boolean(bullet) || (open && /^[ \t]+\S/.test(line));
-  }
+  const found = acceptanceCriteria(ticket.body);
   if (!found.length) refuse(`Ticket #${pr.issue} has no acceptance criteria to judge. Add them under "## Acceptance criteria".`);
   return found.map((criterion, i) => ({ id: `C${i + 1}`, text: criterion }));
 }
@@ -194,9 +185,6 @@ const worktreesOf = (root, number) =>
     .map((line) => line.slice("worktree ".length))
     .filter((path) => basename(path) === `pr-${number}` && basename(dirname(path)).startsWith("cistack-qa-"));
 
-// What QA found on the current head, or nothing yet.
-const reportOn = (pr) => records(pr, "qa").findLast((report) => report.head === pr.head);
-
 // A new worktree at the head, outside the main checkout: inside it, tools that search
 // upwards would find its installed dependencies and leftover files.
 function newWorktree(root, pr) {
@@ -208,7 +196,7 @@ function newWorktree(root, pr) {
 function start(opts) {
   const pr = pullRequest(opts.pr);
   if (!reviewPassed(pr)) refuse(`The reviewer hasn't passed pull request #${pr.number} at ${pr.head}. Review it first.`);
-  if (reportOn(pr)?.result === "passed") refuse(`Pull request #${pr.number} already passed QA at ${pr.head}.`);
+  if (qaReport(pr)?.result === "passed") refuse(`Pull request #${pr.number} already passed QA at ${pr.head}.`);
   if (runOf(pr.number)) refuse(`QA is already running on pull request #${pr.number}. If it is gone, run \`qa.mjs done --pr ${pr.number}\` first.`);
   const ticket = ticketOf(pr);
   const list = criteria(pr, ticket);
@@ -297,16 +285,19 @@ function checkedAudit(given, lockfiles, agreedAudit) {
 // Anything failed fails the run. Anything unverified keeps it from passing.
 const resultOf = (verdicts) => ["failed", "unverified"].find((v) => verdicts.includes(v)) ?? "passed";
 
-// Someone else's words, quoted without notifying anyone they name.
-const quoted = (words) => words.replace(/(^|[^\w])@(?=[A-Za-z0-9])/g, "$1@\u200B");
-
 function reportComment({ head, result, criteria, checks, audit, regressions, lockfiles }) {
   const problems = (verdict) => [
     ...criteria.filter((c) => c.verdict === verdict).map((c) => `${c.id} ${verdict}: ${quoted(c.criterion)} ${c.ran ? `Ran: ${c.ran}. ` : ""}Evidence: ${c.evidence}`),
     ...checks.filter((c) => c.verdict === verdict).map((c) => `${c.step} ${verdict}: ${c.evidence}`),
     ...(audit?.verdict === verdict ? [`Dependency audit ${verdict}: ${audit.evidence}`] : []),
   ];
-  const data = { head, result, failed: [...problems("failed"), ...regressions.map((r) => `Regression: ${r}`)], unverified: problems("unverified") };
+  const data = {
+    head,
+    result,
+    criteria: criteria.map(({ id, criterion, verdict, evidence }) => ({ id, criterion, verdict, evidence })),
+    failed: [...problems("failed"), ...regressions.map((r) => `Regression: ${r}`)],
+    unverified: problems("unverified"),
+  };
   const lines = [
     marker("qa", data),
     `**cistack \`qa\`** · **${result}** · commit \`${head.slice(0, 7)}\``,
@@ -395,7 +386,7 @@ function next(opts) {
   const result = (action, more) => ({ pr: pr.number, issue: pr.issue, head: pr.head, action, ...more });
   if (!reviewPassed(pr)) return result("review");
   if (runOf(pr.number)) return result("running");
-  const report = reportOn(pr);
+  const report = qaReport(pr);
   if (!report) return result("qa");
   if (report.result === "passed") return result("passed", { url: report.url });
   if (report.result === "failed") return result("fix", { url: report.url, message: fixMessage(pr, report) });

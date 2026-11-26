@@ -1,7 +1,7 @@
 // Where a target project keeps cistack's gitignored files.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // The main checkout's root, even from inside a worktree.
@@ -31,4 +31,13 @@ export function writeCistack(file, value) {
   const ignore = join(dirname(path), ".gitignore");
   if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+}
+
+// Adds a line to a .cistack file, which ignores itself like the JSON files do.
+export function appendCistack(file, line) {
+  const path = cistackPath(file);
+  mkdirSync(dirname(path), { recursive: true });
+  const ignore = join(dirname(path), ".gitignore");
+  if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
+  appendFileSync(path, `${line}\n`);
 }

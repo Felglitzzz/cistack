@@ -437,6 +437,16 @@ test("post puts the report on the pull request, with a verdict and evidence for 
   assert.match(comment.body, /No lockfile changed/);
 });
 
+test("the report's hidden data keeps each criterion's verdict and evidence, for the spec's signoff", (t) => {
+  const p = running(t);
+  p.ok(p.post(goodReport({ criteria: [passed("C1"), unverified("C2")] })));
+  const [, data] = p.comments().at(-1).body.match(/^<!-- cistack:qa ([A-Za-z0-9+/=]+) -->/);
+  assert.deepEqual(JSON.parse(Buffer.from(data, "base64").toString("utf8")).criteria, [
+    { id: "C1", criterion: "The button downloads a CSV file.", verdict: "passed", evidence: "report.csv held 3 rows" },
+    { id: "C2", criterion: "An empty report downloads only the header row, with every column named.", verdict: "unverified", evidence: "needs the iOS app, and there is no simulator" },
+  ]);
+});
+
 test("QA's worktree is removed as soon as it reports, even when the report is posted from inside it", (t) => {
   for (const inside of [false, true]) {
     const p = running(t);

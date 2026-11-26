@@ -41,3 +41,6 @@ export function text(value, what) {
   }
   return line;
 }
+
+// Someone else's words, quoted without notifying anyone they name.
+export const quoted = (words) => words.replace(/(^|[^\w])@(?=[A-Za-z0-9])/g, "$1@\u200B");

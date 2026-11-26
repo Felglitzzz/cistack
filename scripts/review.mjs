@@ -153,7 +153,8 @@ function progress(pr) {
   const answers = latest && records(pr, "answers").findLast((a) => a.round === latest.round);
   let action = "review";
   if (latest && failing(latest).length) action = answers ? "review" : "answer";
-  else if (reviewPassed(pr)) action = "passed";
+  // The owner's override stands in for a full score on the head it was given for.
+  if (reviewPassed(pr)) action = "passed";
 
   const raised = new Map(verdicts.flatMap((v) => v.findings.map((f) => [f.id, f])));
   const disputes = (answers?.answers ?? []).filter((a) => a.mark === "dispute").map((a) => ({ ...raised.get(a.finding), reason: a.reason }));

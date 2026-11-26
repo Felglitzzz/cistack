@@ -25,7 +25,7 @@ Read `.cistack/status.json`; a missing file means an empty state. Then read GitH
 - Board items and their statuses: `gh project item-list <number> --owner <owner> --format json --limit 200`, using the board in `docs/agents/issue-tracker.md`.
 - Open pull requests: `gh pr list --state open --json number,title,headRefName,isDraft`.
 
-For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n> --owner <owner> --project <number>` says where its review stands, and moves the ticket back to In review if something was pushed after a pass. Where it says `passed`, `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" next --pr <n>` says where its QA stands. Only read them: start no reviewer, QA or coder before the owner asks.
+For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" next --pr <n> --owner <owner> --project <number>` says where its review stands, and moves the ticket back to In review if something was pushed after a pass. Where it says `passed`, `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" next --pr <n>` says where its QA stands, and where that says `passed` too, `node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" next --pr <n>` says whether it can merge. Only read them: start no reviewer, QA or coder, and merge nothing, before the owner asks.
 
 GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove every entry in `agents`: an agent from an earlier session is no longer running. A coder's worktree stays. A QA worktree holds no work, so for each QA entry run `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" done --pr <n>`, which removes both. Do this before asking where QA stands. Keep `coderCount`. Note any open issue in In progress, In review or In QA that has no pull request: dispatching it again continues in its worktree.
 
@@ -33,7 +33,7 @@ Keep `grilling` entries: they have no issue yet, and each is a request still wai
 
 ## 3. Find leftover worktrees
 
-`git worktree list --porcelain`. For every worktree other than the main checkout, note its branch, whether the branch is merged into the base branch (`git branch --merged <base>`), and whether it has uncommitted changes (`git -C <path> status --porcelain`). List them. Never delete a worktree with unmerged or uncommitted work without the owner's explicit OK. The exception is a QA worktree (`.../cistack-qa-*/pr-<n>`), which `qa.mjs done --pr <n>` removes. Offer to remove the ones that are merged and clean.
+`git worktree list --porcelain`. For every worktree other than the main checkout, note its branch, whether its pull request is merged (`gh pr list --state merged --head <branch> --json number`; a squash merge doesn't show in `git branch --merged`), and whether it has uncommitted changes (`git -C <path> status --porcelain`). A finished worktree is always removed, without asking: for each one whose pull request is merged, including one the owner merged by hand, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" cleanup --pr <n> --owner <owner> --project <number>`, which removes the worktree and branch and shows the ticket as Done. It keeps any with uncommitted work or commits the pull request lacks, and says so. Never delete a worktree with unmerged or uncommitted work without the owner's explicit OK, and list those. The exception is a QA worktree (`.../cistack-qa-*/pr-<n>`), which `qa.mjs done --pr <n>` removes.
 
 ## 4. Report
 
@@ -43,7 +43,7 @@ Post one short message to the project channel with the `reply` tool, or print it
 - each open pull request's review: its round and score, or that it passed, and then where its QA stands;
 - what is waiting on the owner, including unfinished grilling, interrupted publishing, escalated reviews and unverified QA runs;
 - anything that disagreed with GitHub and how you resolved it;
-- leftover worktrees.
+- leftover worktrees, and the finished ones you removed.
 
 Leave out anything empty. A quiet project gets a one-line "Nothing in progress. Ready for work."
 

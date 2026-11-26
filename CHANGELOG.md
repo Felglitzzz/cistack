@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+- `cistack:merge-loop` merges a pull request once the reviewer and QA have both passed its current head: `scripts/merge.mjs` squash-merges it, one at a time, with the head pinned so a push in between stops it. If the base moved, `merge.mjs rebase` has GitHub rebase the branch: the reviewer's pass carries over when the change itself is the same, and QA runs again on the new head (#10).
+- After a merge the coder's worktree and branch are removed, the ticket moves to Done and the project channel gets a merge notice. A worktree with uncommitted work or commits the pull request lacks is kept and reported. `merge.mjs cleanup` does the same for a pull request you merged by hand, and wake-up runs it for every finished worktree without asking (#10).
+- The owner can accept a pull request that didn't get a full review score: `merge.mjs override`, only from the owner's own message to the coordinator. It needs a one-line reason, covers that head commit only, leaves the score as it was and doesn't skip QA. A failing security item needs each finding named. It is kept in `.cistack/overrides.json`, not on the pull request (#10).
+- Three hooks enforce the hard rules and log each refusal to `.cistack/refusals.log`: no merge without both passes on the head, no push to the base branch, and no write by a coder or QA outside its worktree. They act only in an onboarded project and refuse what they can't check. No role but the coordinator may run `merge.mjs`. `docs/limitations.md` says what they can't see (#10).
+- `cistack:signoff` and `scripts/signoff.mjs`: when a spec's last ticket merges, every acceptance criterion is mapped to QA's evidence on the head that merged and posted in the spec thread. The spec issue closes only when nothing is missing; otherwise the coordinator proposes follow-up tickets for you to approve (#10).
+- QA's report now carries each criterion's verdict and evidence in its hidden data, which signoff reads. Pull requests QA'd before 0.8.0 have none, so their criteria show as missing at signoff (#10).
+
 ## 0.7.0
 
 - Once the reviewer passes a pull request's head, `cistack:qa-loop` gets it through QA: `scripts/qa.mjs` moves the ticket to In QA and a fresh `cistack:qa` runs it in a new worktree outside the main checkout, with a clean install and the commands the base branch records (#9).

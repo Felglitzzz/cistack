@@ -1,0 +1,13 @@
+{
+  "session_id": "5c1a0b52-8a6c-4d2e-9f0e-3b7f1c2d4e6a",
+  "transcript_path": "/Users/owner/.claude/projects/acme-widgets/5c1a0b52.jsonl",
+  "cwd": "{{cwd}}",
+  "permission_mode": "auto",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr merge 60 --squash --delete-branch",
+    "description": "Merge pull request 60"
+  },
+  "tool_use_id": "toolu_01MergeExample"
+}

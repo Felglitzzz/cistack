@@ -1,0 +1,19 @@
+{
+  "description": "cistack's guards: no merge without both passes on the head, no push to the base branch, no writes outside a coder's or QA's worktree.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-merge.mjs\"" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-push.mjs\"" }]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-writes.mjs\"" }]
+      }
+    ]
+  }
+}

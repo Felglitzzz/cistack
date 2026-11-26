@@ -84,6 +84,25 @@ const issueUrl = (number) => `https://github.com/acme/widgets/issues/${number}`;
 
 if (group === "api" && command === "graphql") {
   const { query, variables } = JSON.parse(stdin);
+  if (query.includes("subIssues(first")) {
+    const spec = state.issues.find((i) => i.number === variables.number);
+    out({
+      data: {
+        repository: {
+          issue: {
+            number: spec.number,
+            title: spec.title,
+            state: spec.state ?? "OPEN",
+            subIssues: {
+              nodes: state.issues
+                .filter((i) => i.parent === spec.number)
+                .map((i) => ({ number: i.number, title: i.title, state: i.state ?? "OPEN", body: i.body ?? "", closedByPullRequestsReferences: { nodes: (i.closedBy ?? []).map(({ number, state, url }) => ({ number, state, url })) } })),
+            },
+          },
+        },
+      },
+    });
+  }
   if (query.includes("closedByPullRequestsReferences")) {
     const find = (number) => state.issues.find((i) => i.number === number);
     const issue = find(variables.number);
@@ -95,7 +114,7 @@ if (group === "api" && command === "graphql") {
           issue: {
             number: issue.number,
             title: issue.title,
-            state: issue.state,
+            state: issue.state ?? "OPEN",
             url: issueUrl(issue.number),
             parent: issue.parent ? { number: issue.parent } : null,
             subIssues: { totalCount: issue.subIssues ?? 0 },
@@ -145,10 +164,15 @@ if (group === "issue" && command === "create") {
   process.exit(0);
 }
 
+// A pull request named by number, URL or branch, as `gh pr view` takes it.
+// With no selector, the pull request of the branch checked out: the first one here.
+const findPr = (selector) => (!selector || selector.startsWith("--") ? state.prs[0] : state.prs.find((p) => String(p.number) === selector || p.url === selector || p.headRefName === selector));
+
 if (group === "pr" && command === "view") {
-  const pr = state.prs.find((p) => p.number === Number(args[2]));
+  const pr = findPr(args[2]);
   if (!pr) die("GraphQL: Could not resolve to a PullRequest");
   out({
+    number: pr.number,
     state: pr.state,
     url: pr.url,
     headRefName: pr.headRefName,
@@ -167,6 +191,43 @@ if (group === "pr" && command === "comment") {
   (pr.comments ??= []).push({ author: { login: "owner" }, viewerDidAuthor: true, body: stdin, url });
   save();
   process.stdout.write(`${url}\n`);
+  process.exit(0);
+}
+
+if (group === "pr" && command === "merge") {
+  const pr = findPr(args[2]);
+  if (!pr) die("GraphQL: Could not resolve to a PullRequest");
+  if (pr.state !== "OPEN") die(`Pull request #${pr.number} is not mergeable: it is ${pr.state}`);
+  if (flag("--match-head-commit") && flag("--match-head-commit") !== pr.head) die("Head branch was modified. Review and try the merge again.");
+  if (state.failMerge) die("HTTP 405: Pull Request is not mergeable");
+  pr.state = "MERGED";
+  pr.mergeMethod = args.includes("--squash") ? "squash" : args.includes("--rebase") ? "rebase" : "merge";
+  for (const number of pr.closes) {
+    const issue = state.issues.find((i) => i.number === number);
+    issue.state = "CLOSED";
+    (issue.closedBy ??= []).push({ number: pr.number, state: "MERGED", url: pr.url });
+  }
+  save();
+  process.exit(0);
+}
+
+// GitHub rebases the pull request's commits onto its base. The test says what the new head is.
+if (group === "pr" && command === "update-branch") {
+  const pr = findPr(args[2]);
+  if (!pr) die("GraphQL: Could not resolve to a PullRequest");
+  if (!args.includes("--rebase")) die("fake gh: update-branch is only used with --rebase");
+  if (state.rebaseConflict) die("HTTP 422: merge conflict between base and head");
+  pr.head = state.rebasedHead;
+  save();
+  process.stdout.write("Pull request branch update started\n");
+  process.exit(0);
+}
+
+if (group === "issue" && command === "close") {
+  const issue = state.issues.find((i) => i.number === Number(args[2]));
+  issue.state = "CLOSED";
+  if (flag("--comment")) (issue.comments ??= []).push(flag("--comment"));
+  save();
   process.exit(0);
 }
 

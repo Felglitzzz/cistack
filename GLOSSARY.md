@@ -30,6 +30,14 @@ _Avoid_: requirement, definition of done
 One pass in which the reviewer or QA judges a pull request, plus the coder's fixes in response.
 _Avoid_: iteration, cycle
 
+**Signoff**:
+The check, when a spec's last ticket has merged, that every acceptance criterion of its tickets has evidence; the spec closes only when none is missing.
+_Avoid_: sign-off, acceptance test, release check
+
+**Owner override**:
+The owner's acceptance of a pull request that did not get a full review score, for one head commit; the score stays as it was and QA must still pass.
+_Avoid_: waiver, bypass, force merge
+
 **Unverified**:
 The verdict QA gives an acceptance criterion it could not exercise; it is never treated as passed.
 _Avoid_: skipped, N/A

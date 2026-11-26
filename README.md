@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.7.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop and QA work, with Discord. One coder builds at a time; merging is not built yet. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.8.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging and a spec's signoff work, with Discord. One coder builds at a time. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -57,7 +57,7 @@ The coordinator then reviews the pull request. A fresh reviewer each round reads
 
 Once the reviewer passes the head, the ticket moves to In QA and a fresh QA runs the pull request. It works in a new worktree outside your checkout, installs from clean, and runs your agreed commands as your base branch records them. It judges every acceptance criterion passed, failed or unverified, with evidence, and looks for regressions. When a lockfile changed it runs your dependency audit, and any high or critical finding fails the run. It seeds, resets or runs destructive checks only if your agent environment is marked disposable. The report goes on the pull request and the worktree is removed.
 
-A failure goes back to the coder, and the fix is reviewed again first: any push after a pass moves the ticket back to In review. A run with something unverified is not a pass, and comes to you. Until merging is built, you merge a pull request that passed both.
+A failure goes back to the coder, and the fix is reviewed again first: any push after a pass moves the ticket back to In review. A run with something unverified is not a pass, and comes to you.
 
 A project onboarded with an earlier version needs `/cistack:onboard` run again for `docs/agents/environments.md` and the audit command, merged to the base branch, before QA can run.
 
@@ -89,3 +89,15 @@ Any change to shipped files (`.claude-plugin/`, `agents/`, `skills/`, `commands/
 ## License
 
 MIT, with notices for adapted third-party work at the end of [LICENSE](LICENSE).
+
+## Merge
+
+The coordinator squash-merges a pull request once the reviewer and QA have both passed its current head, one at a time, and removes the coder's worktree and branch. If the base moved, it has GitHub rebase the pull request first, and QA runs again on the new head. The ticket moves to Done and the project channel gets a notice. A worktree with uncommitted work, or commits the pull request lacks, is kept and reported. A pull request you merged by hand is cleaned up the same way when the coordinator wakes or you tell it.
+
+You can accept a pull request that didn't get a full review score. Tell the coordinator, with a one-line reason and, for a failing security item, each finding you accept. It covers that head commit only, the score stays as it was, and QA must still pass.
+
+Hooks enforce the hard rules even when an agent ignores its instructions: no merge without both passes on the head, no push to the base branch, and no write outside a coder's or QA's worktree. Each refusal is logged in `.cistack/refusals.log`. See [what they can and can't see](docs/limitations.md#the-guard-hooks-catch-what-they-can-read).
+
+## Signoff
+
+When a spec's last ticket merges, the coordinator maps every acceptance criterion to its evidence (QA's report on the head that merged) and posts the result in the spec thread. It closes the spec issue only when nothing is missing. Otherwise it proposes follow-up tickets for you to approve.

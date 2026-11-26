@@ -85,7 +85,7 @@ sequenceDiagram
     C->>G: spec issue + ticket sub-issues
     C->>K: dispatch ticket (In progress)
     K->>G: PR "Closes #n" (In review)
-    loop review rounds (max 5)
+    loop review rounds (max 4 without the owner)
         C->>R: review PR head
         R->>G: score + findings (security included)
         alt findings open

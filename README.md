@@ -51,7 +51,7 @@ Ask the coordinator to build a ticket whose blockers have merged. It opens a tic
 
 ## Review
 
-The coordinator then reviews the pull request. A fresh reviewer each round reads the diff in a worktree of its own and scores four items: ticket criteria, standards, security and risk. It posts the score on the pull request, such as `3/4: security`, with its findings. The coder answers each one: fix, dispute with a reason, or duplicate. The next reviewer rules on the disputes. The loop stops when the head has a full score. The coordinator steps in at round 3, and at round 5 the decision comes to you in the project channel. Until QA is built, you check and merge a passed pull request.
+The coordinator then reviews the pull request. A fresh reviewer each round reads the diff in a worktree of its own and scores four items: ticket criteria, standards, security and risk. It posts the score on the pull request, such as `3/4: security`, with its findings. The coder answers each one: fix, dispute with a reason, or duplicate. The next reviewer rules on the disputes. The loop stops when the head has a full score. The coordinator steps in at round 3. If round 4 ends without a pass, the decision comes to you in the project channel, and no 5th review runs before you answer. Until QA is built, you check and merge a passed pull request.
 
 ## Develop locally
 

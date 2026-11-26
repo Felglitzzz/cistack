@@ -336,36 +336,46 @@ function failRounds(p, count, from = 1) {
   return seen;
 }
 
-test("rounds 1-2 are the coder's, 3-4 the coordinator's, and an unpassed round 5 goes to the owner", (t) => {
+test("rounds 1-2 are the coder's, 3-4 the coordinator's, and an unpassed round 4 goes to the owner", (t) => {
   const p = project(t);
-  assert.deepEqual(failRounds(p, 5), [
+  assert.deepEqual(failRounds(p, 4), [
     [1, "coder", "answer"],
     [2, "coder", "answer"],
     [3, "coordinator", "answer"],
-    [4, "coordinator", "answer"],
-    [5, "owner", "escalate"],
+    [4, "owner", "escalate"],
   ]);
   const stuck = p.next();
   assert.equal(stuck.action, "escalate");
   assert.equal(stuck.score, "3/4: risk");
-  assert.equal(stuck.findings[0].id, "R5-1");
-  assert.deepEqual(p.status().reviewRounds, { 60: 5 });
+  assert.equal(stuck.findings[0].id, "R4-1");
+  assert.deepEqual(p.status().reviewRounds, { 60: 4 });
 });
 
-test("the owner can allow another round past 5", (t) => {
+test("no 5th review starts before the owner answers, even once round 4 is answered", (t) => {
   const p = project(t);
-  failRounds(p, 5);
-  assert.equal(p.next("--owner-ok").action, "answer");
-  p.ok(p.answer([dispute("R5-1")]));
-  const sixth = p.next("--owner-ok");
-  assert.deepEqual([sixth.round, sixth.handler, sixth.action], [6, "owner", "review"]);
+  failRounds(p, 4);
+  p.ok(p.answer([dispute("R4-1")]));
+  const waiting = p.next();
+  assert.deepEqual([waiting.round, waiting.handler, waiting.action], [4, "owner", "escalate"]);
+  assert.equal(waiting.brief, undefined);
+});
+
+test("the owner can allow another round past 4, one at a time", (t) => {
+  const p = project(t);
+  failRounds(p, 4);
+  const allowed = p.next("--owner-ok");
+  assert.deepEqual([allowed.round, allowed.handler, allowed.action], [4, "coordinator", "answer"]);
+  p.ok(p.answer([dispute("R4-1")]));
+  const fifth = p.next("--owner-ok");
+  assert.deepEqual([fifth.round, fifth.handler, fifth.action], [5, "owner", "review"]);
+  p.ok(p.post(verdict([finding("risk")], { rulings: [upheld("R4-1")] })));
   assert.equal(p.next().action, "escalate");
 });
 
-test("a pass at round 5 stops the loop, and a push after it goes to the owner", (t) => {
+test("a pass at round 4 stops the loop, and a push after it waits for the owner", (t) => {
   const p = project(t);
-  failRounds(p, 4);
-  p.ok(p.post(verdict([], { rulings: [dismissed("R4-1")] })));
+  failRounds(p, 3);
+  p.ok(p.post(verdict([], { rulings: [dismissed("R3-1")] })));
   assert.equal(p.next().action, "passed");
   p.push(PUSHED);
   assert.equal(p.next().action, "escalate");

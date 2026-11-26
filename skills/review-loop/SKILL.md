@@ -19,8 +19,8 @@ Do what `action` says, then run it again. Exit code 4 means the pull request can
 - **`answer`**: send `message` to the ticket's coder with SendMessage, word for word. It fixes, pushes and posts its marks. If that coder is gone, remove its entry from `agents` in `.cistack/status.json` and start one with
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" start --issue <ticket> --pr <n> --owner <owner> --project <number> --thread <thread-id>`,
   then dispatch it as `cistack:dispatch` does, with the `brief` followed by `message` as its prompt. A coder that ends without posting its marks gets the reason put right and the message again.
-- **`passed`**: the loop is over for this commit. Say so in the ticket thread and the project channel, with the pull request's link, the score and the commit. QA and merging aren't available yet, so it waits for the owner's review and merge. A later push starts a new round.
-- **`escalate`**: the pull request hasn't passed by round 5, so the owner decides. Post in the project channel: the pull request's link, the score, each open finding, where the coder and the reviewer disagreed (the pull request's comments hold both), and what you would do. Start nothing more on it until they answer. If they want another round, run `next` with `--owner-ok` until that round's verdict is posted, then without it.
+- **`passed`**: the loop is over for this commit. Say so in the ticket thread and the project channel, with the pull request's link, the score and the commit. QA and merging aren't available yet, so it waits for the owner's review and merge. A later push needs a new round; `next` says whether it can start one or the owner has to allow it.
+- **`escalate`**: round 4 didn't end with a pass on the head, so the owner decides before anything else runs, a 5th review included. Post in the project channel: the pull request's link, the score, each open finding, where the coder and the reviewer disagreed (the pull request's comments hold both), and what you would do. Start nothing more on it until they answer. If they want another round, run `next` with `--owner-ok` until that round's verdict is posted, then without it.
 
 ## Who handles a round
 
@@ -28,6 +28,6 @@ Do what `action` says, then run it again. Exit code 4 means the pull request can
 
 - **`coder`** (rounds 1 and 2): between the coder and the reviewer. Pass the brief and the message along; don't judge the findings or add your own.
 - **`coordinator`** (rounds 3 and 4): you take over. Before the next step, read the findings, the coder's answers and the code in question, and check each claim yourself. Under the coder's message, add what you want done about each finding. You can't change a score or rule on a dispute: only the next reviewer does. When the dispute is really about what the ticket means, ask the owner.
-- **`owner`** (round 5 on): the owner's decision, as under `escalate`.
+- **`owner`** (after round 4): the owner's decision, as under `escalate`, and any round they allow past 4.
 
 Say in the ticket thread when you take over at round 3. Without Discord, say all of this in the terminal.

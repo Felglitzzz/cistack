@@ -5,13 +5,14 @@
 // Verdicts and answers come in a file the agent writes: Claude Code refuses or asks about
 // a shell command with JSON in it. The file is removed once its comment is posted.
 // The loop stops when a verdict has a full score on the head. Rounds 1-2 are the
-// coder's to answer, 3-4 the coordinator's, and from round 5 the owner decides.
+// coder's to answer and 3-4 the coordinator's. A round 4 without a full score goes to
+// the owner, and no 5th review starts until they answer.
 //
 // Usage:
 //   node scripts/review.mjs next --pr <n> [--owner-ok]
 //     For the coordinator: what the pull request needs now (review, answer, passed or
 //     escalate), the brief for a fresh reviewer or the message for the coder.
-//     --owner-ok: the owner allowed going on past round 5.
+//     --owner-ok: the owner allowed going on past round 4.
 //   node scripts/review.mjs post --pr <n> --file <verdict.json>
 //     For the reviewer: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
 //     "findings": [{"item", "where", "problem"}], "securityReview": "built-in"|"fallback: <why>",
@@ -32,8 +33,8 @@ import { cistackPath, writeCistack } from "./lib/project.mjs";
 const USAGE = "usage: review.mjs next --pr <n> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
 // What every reviewer scores, in this order. The score is the number that pass.
 const CHECKLIST = ["ticket criteria", "standards", "security", "risk"];
-// A pull request that hasn't passed by this round goes to the owner.
-const LAST_ROUND = 5;
+// The last round that needs no word from the owner.
+const LAST_ROUND = 4;
 const here = dirname(fileURLToPath(import.meta.url));
 const reviewScript = join(here, "review.mjs");
 const discordScript = join(here, "discord.mjs");
@@ -304,7 +305,7 @@ function reviewerBrief(pr, round, { disputes, settled }) {
   return lines.join("\n");
 }
 
-const handlerOf = (round) => (round <= 2 ? "coder" : round < LAST_ROUND ? "coordinator" : "owner");
+const handlerOf = (round) => (round <= 2 ? "coder" : round <= LAST_ROUND ? "coordinator" : "owner");
 
 function recordRound(pr, round) {
   const status = readCistack("status.json");
@@ -321,7 +322,8 @@ function next(opts) {
   const round = action === "review" ? verdicts.length + 1 : latest.round;
   recordRound(pr.number, round);
 
-  const result = { pr: pr.number, issue: pr.issue, url: pr.url, head: pr.head, round, handler: handlerOf(round), action };
+  const handler = capped ? "owner" : handlerOf(round);
+  const result = { pr: pr.number, issue: pr.issue, url: pr.url, head: pr.head, round, handler, action };
   if (latest) Object.assign(result, { score: score(latest), findings: latest.findings, answers: answers?.answers ?? [] });
   if (action === "review") result.brief = reviewerBrief(pr, round, state);
   if (action === "answer") result.message = answerMessage(pr, latest);

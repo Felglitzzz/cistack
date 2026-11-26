@@ -5,7 +5,7 @@
 - Once a coder's pull request is open, `cistack:review-loop` reviews it: a fresh `cistack:reviewer` each round, in a worktree of its own, scores ticket criteria, standards, security and risk and names every failing item (#8).
 - The security item uses an adapted `cistack:secure-coding` checklist and Claude Code's built-in security review. A subagent can run that review, but it reads the diff of its working directory, so the reviewer checks out the pull request's head first and says so when it had to fall back (#8).
 - The coder marks each finding fix, dispute with a reason or duplicate, and the next reviewer rules on the disputes (#8).
-- `scripts/review.mjs` posts verdicts and answers as labeled comments, counts only those posted with your login, refuses a bare `@name`, and stops the loop at a full score on the head. Rounds 3 and 4 go through the coordinator, and from round 5 you decide (#8).
+- `scripts/review.mjs` posts verdicts and answers as labeled comments, counts only those posted with your login, refuses a bare `@name`, and stops the loop at a full score on the head. Rounds 3 and 4 go through the coordinator. If round 4 ends without a pass, you decide, and no 5th review runs before you answer (#8).
 - `scripts/dispatch.mjs start --pr` brings back a coder to answer the review of an open pull request (#8).
 - Wake-up reports where each open pull request's review stands (#8).
 

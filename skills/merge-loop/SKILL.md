@@ -26,7 +26,7 @@ The board's owner and number are in `docs/agents/issue-tracker.md`. A hook refus
   ```
   node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" merge --pr <n> --owner <owner> --project <number>
   ```
-  It squash-merges that head, removes the coder's worktree and branch, and moves the ticket to Done. Post its `notice` in the project channel and the ticket thread. If `kept` isn't empty, the coder's worktree holds uncommitted work or commits the pull request lacks: tell the owner what and where, and remove nothing. If the pull request was the last of its spec's tickets, go on to the `cistack:signoff` skill.
+  It squash-merges that head, removes the coder's worktree and branch, and moves the ticket to Done. Post its `notice` in the project channel and the ticket thread. If `kept` isn't empty, the coder's worktree holds uncommitted work or commits the pull request lacks: tell the owner what and where, and remove nothing. Then do what `recheck` says, every time: a merge frees the coder's place (`freed`) and the shared resources its ticket held, and may unblock other tickets, so any ticket that was waiting (exit code 5 from `dispatch.mjs check`, or blocked by this one) may be ready now. Go through the tickets in Todo with the `cistack:dispatch` skill's check, and dispatch each one that passes. Do this before anything else that can wait, or a waiting ticket is forgotten. If the pull request was the last of its spec's tickets, go on to the `cistack:signoff` skill.
 
 ## When the owner merged one by hand
 
@@ -34,7 +34,7 @@ A finished worktree is always removed, without asking. When wake-up finds a merg
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" cleanup --pr <n> --owner <owner> --project <number>
 ```
-It does what `merge` does after the merge, and refuses a pull request that isn't merged. A worktree with uncommitted work, or with commits the pull request lacks, is kept and reported: ask the owner before removing it.
+It does what `merge` does after the merge, including `recheck`: do what it says, as after a merge. It refuses a pull request that isn't merged. A worktree with uncommitted work, or with commits the pull request lacks, is kept and reported: ask the owner before removing it.
 
 ## The owner's override
 

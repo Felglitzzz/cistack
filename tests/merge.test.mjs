@@ -289,3 +289,35 @@ test("review and QA treat an overridden head as reviewed", (t) => {
   const next = p.ok(p.runScript(join(scripts, "review.mjs"), ["next", "--pr", "60", ...p.boardFlags]));
   assert.equal(next.action, "passed");
 });
+
+test("a merge tells the coordinator to check the waiting tickets again, naming the place and resources it freed", (t) => {
+  const p = project(t);
+  p.patchStatus((s) => (s.agents[0].resources = ["database"]));
+  const json = p.ok(p.merge("merge", "--pr", "60", ...p.boardFlags));
+  assert.deepEqual(json.freed, { coder: "coder-1", resources: ["database"] });
+  assert.match(json.recheck, /dispatch\.mjs check/);
+  assert.match(json.recheck, /coder-1's place and `database`/);
+  assert.match(json.recheck, /waiting/);
+});
+
+test("a merge and a cleanup say to check the waiting tickets even when no coder entry was left, since the merge may unblock tickets", (t) => {
+  const p = project(t, { reviewed: false, qaPassed: false });
+  p.patchStatus((s) => (s.agents = []));
+  p.patchState((s) => {
+    s.prs[0].state = "MERGED";
+    s.issues[1].state = "CLOSED";
+  });
+  const json = p.ok(p.merge("cleanup", "--pr", "60", ...p.boardFlags));
+  assert.equal(json.freed, null);
+  assert.match(json.recheck, /dispatch\.mjs check/);
+  assert.match(json.recheck, /unblocked/);
+});
+
+test("a coder whose worktree is kept still holds its place, and the merge doesn't say it was freed", (t) => {
+  const p = project(t);
+  writeFileSync(join(p.worktree, "scratch.txt"), "half done\n");
+  const json = p.ok(p.merge("merge", "--pr", "60", ...p.boardFlags));
+  assert.equal(json.freed, null);
+  assert.equal(p.status().agents.length, 1);
+  assert.match(json.recheck, /dispatch\.mjs check/);
+});

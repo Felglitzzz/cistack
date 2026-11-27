@@ -6,6 +6,7 @@
 - Tickets that need the same shared resource take turns. A ticket lists what it needs under `## Shared resources`, named as `docs/agents/environments.md` lists them (`scripts/publish.mjs` writes the section from a ticket's `resources`); dispatch holds back a ticket whose resource another coder has, refuses a name the doc doesn't list, and lets every other ticket run in parallel (#12).
 - Onboarding section H records a model per role (defaults: coordinator, reviewer and teacher on `opus`; coder and QA on `sonnet`; advisor on `fable`) and the coder limit in `.cistack/settings.json`, which is gitignored. `scripts/settings.mjs` shows and sets them (#12).
 - Each agent runs on its role's model: `dispatch.mjs start`, `review.mjs next` (for a new reviewer) and `qa.mjs start` print a `model` that the coordinator passes to the Agent tool, and `start.sh` starts the coordinator on its model (#12).
+- A merge (and a cleanup) prints `freed`, the coder's place and shared resources it released, and `recheck`, which tells the coordinator to check the waiting tickets again; `cistack:merge-loop` says to do it every time, so a ticket waiting on the limit or a resource isn't forgotten (#12).
 - Onboarding section C asks for each shared resource as a named bullet. Run `/cistack:onboard` again to change your answers in a project set up earlier (#12).
 
 ## 0.8.0

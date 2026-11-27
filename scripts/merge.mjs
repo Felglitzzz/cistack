@@ -9,7 +9,9 @@
 //     What the pull request needs now: not-ready (with `missing`: review, qa), rebase
 //     (the base moved), wait (another pull request is being merged) or merge.
 //   node scripts/merge.mjs merge --pr <n> --owner <owner> --project <number>
-//     Squash-merges the pull request, then does what `cleanup` does.
+//     Squash-merges the pull request, then does what `cleanup` does. The output's `recheck`
+//     tells the coordinator to check the waiting tickets again; `freed` names the coder's
+//     place and shared resources it released, or is null when the coder's work was kept.
 //   node scripts/merge.mjs rebase --pr <n>
 //     When the base moved: has GitHub rebase the pull request's commits onto it. If the
 //     change itself is the same afterwards, the reviewer's pass carries over to the new
@@ -167,6 +169,13 @@ function unmergedWork(root, pr, worktree, tip) {
   return null;
 }
 
+// What the coordinator does next: tickets may have been waiting for this merge, for a coder's
+// place or for a shared resource, and nothing else brings them back to mind.
+function recheck(pr, freed) {
+  const free = freed ? ` ${freed.coder}'s place${freed.resources.length ? ` and ${freed.resources.map((r) => `\`${r}\``).join(", ")}` : ""} ${freed.resources.length ? "are" : "is"} free, and` : "";
+  return `Check the tickets that were waiting again:${free} the merge of #${pr.issue} may have unblocked tickets. Run dispatch.mjs check for each ticket in Todo that waited on the coder limit, a shared resource or this ticket, and dispatch those that pass.`;
+}
+
 // Removes what a merged pull request leaves behind, and shows its ticket as Done.
 function finish(pr, opts, root) {
   const done = { removed: [], kept: [] };
@@ -189,7 +198,9 @@ function finish(pr, opts, root) {
     }
   }
   const status = readCistack("status.json");
-  status.agents = (status.agents ?? []).filter((a) => !(a.role === "coder" && a.issue === pr.issue && !done.kept.length));
+  const coder = (status.agents ?? []).find((a) => a.role === "coder" && a.issue === pr.issue);
+  const freed = coder && !done.kept.length ? { coder: coder.name, resources: coder.resources ?? [] } : null;
+  status.agents = (status.agents ?? []).filter((a) => a !== coder || !freed);
   if (status.reviewRounds) delete status.reviewRounds[pr.number];
   writeCistack("status.json", status);
 
@@ -199,6 +210,8 @@ function finish(pr, opts, root) {
     issue: pr.issue,
     head: pr.head,
     ...done,
+    freed,
+    recheck: recheck(pr, freed),
     notice: `Merged pull request #${pr.number} (squash) at ${pr.head.slice(0, 7)}: ticket #${pr.issue} is Done. ${pr.url}`,
   };
 }

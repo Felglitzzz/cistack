@@ -51,6 +51,17 @@ The script gives QA seed and cleanup commands only when the environment is marke
 
 The script requires a verdict and evidence for every criterion and agreed command, and works out the result. It takes QA's word for the evidence and for the audit's counts. A lockfile change is recognised by the file's name (`package-lock.json`, `yarn.lock`, `Cargo.lock`, `go.sum` and the other common ones, listed in `scripts/qa.mjs`). QA has a shell but no browser tool: what it can't drive from there is unverified.
 
+## QA's video
+
+cistack ships no recorder. QA records with what your project and its agent environment already have, and a project with nothing that can record gets reports that say so. A video is never a verdict, so a missing one doesn't change the result.
+
+- **Discord's upload limit.** Measured through a channel webhook, posting into a thread, on 2026-11-27: a file of 20,971,520 bytes (20 MiB) was accepted and one byte more was refused (`413`, "Request entity too large"). The limit depends on the server, so cistack lets Discord decide, tells QA to stay under 20 MiB, and reports a refusal. A message link opens only for members of your server.
+- **R2 links are public.** Anyone who has the link can watch, on a public repository anyone at all. The name is random, and the bucket can't be listed. A video is deleted 90 days after upload, give or take a day. The expiry covers objects under `cistack-qa/` only. The `r2.dev` public URL is rate-limited; a custom domain isn't.
+- **R2 keys.** Setting the expiry needs a token with Admin Read & Write. Swap it for an Object Read & Write token on the one bucket afterwards. Like the webhook URLs, it is a file any agent's shell can read.
+- **Checked against a stand-in.** The R2 upload and expiry are tested against a local fake of R2's S3 API, not a real bucket.
+- **What is published.** The script takes only a `.mp4`, `.mov` or `.webm` file inside QA's worktree, going by its first bytes. It can't see what the video shows: QA is told never to put a secret on screen.
+- **Deleted either way.** A listed video is deleted once the upload has been tried, so a failed one can only be recorded again by a new run. Files QA recorded but didn't list go with its worktree. A run that ends without reporting keeps them until the coordinator removes its worktree.
+
 ## Parallel coders hold their place until they merge
 
 A coder counts against the coder limit, and its ticket's shared resources stay taken, from dispatch until the ticket's pull request has merged. So coders waiting on review or QA still use up places: with a limit of 2, two open pull requests hold the next ticket back until one merges. Wake-up clears every entry from an earlier session, since none of those agents is still running.

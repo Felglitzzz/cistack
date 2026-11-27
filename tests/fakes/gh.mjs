@@ -188,6 +188,7 @@ if (group === "pr" && command === "comment") {
   const pr = state.prs.find((p) => p.number === Number(args[2]));
   if (!pr) die("GraphQL: Could not resolve to a PullRequest");
   if (flag("--body-file") !== "-") die("fake gh: comment bodies come from stdin");
+  if (state.commentsDown) die("HTTP 502: Bad Gateway");
   const url = `${pr.url}#issuecomment-${++seq}`;
   (pr.comments ??= []).push({ author: { login: "owner" }, viewerDidAuthor: true, body: stdin, url });
   save();

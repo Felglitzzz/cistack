@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: Set up this repository as a cistack target project, covering the board, commands, worktree setup, environment slots, domain docs and Discord. Run it once before waking the coordinator, and again to review or change the answers.
+description: Set up this repository as a cistack target project, covering the board, commands, worktree setup, environment slots, domain docs, Discord and video storage. Run it once before waking the coordinator, and again to review or change the answers.
 disable-model-invocation: true
 ---
 
@@ -79,6 +79,22 @@ The coordinator is the Discord bot, through the official Discord plugin. Every o
    This lets every message from the owner reach the coordinator, with no @mention needed, and nobody else's.
 5. Optionally, the owner can give each `cistack-<role>` webhook an avatar under the channel's Settings → Integrations → Webhooks.
 
+### F. Video storage (optional)
+
+QA records a video of the flows it tests. With a Cloudflare R2 bucket, every video is uploaded there under a random name, linked from the pull request and the ticket thread, and expires after 90 days. Without one, the video goes into the ticket thread when it fits Discord's upload limit (20 MiB where cistack measured it; servers differ). Either way the file is deleted from this machine. Recommend skipping when section E set up Discord, and a bucket when it didn't, since videos then have nowhere to go.
+
+On a re-run, show what is set up first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/video.mjs" show`.
+
+The keys never enter this conversation: don't ask for them, and never open or print `.cistack/r2.json`.
+
+1. Ask the owner, in the Cloudflare dashboard under R2, to:
+   - create a bucket for these videos alone;
+   - turn on public access to it, with a custom domain or its Public Development URL (`r2.dev`, which Cloudflare rate-limits). Anyone who has a video's link can watch it;
+   - create an R2 API token with **Admin Read & Write** permission, which setting the expiry needs.
+2. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/video.mjs" init`, and have the owner fill in the file it names, in their own editor: `endpoint` (the S3 API URL, `https://<account-id>.r2.cloudflarestorage.com`, or the bucket's jurisdiction form), `bucket`, `accessKeyId`, `secretAccessKey` and `publicUrl` (where the bucket is public).
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/video.mjs" setup`. It adds a lifecycle rule that deletes cistack's videos (those under `cistack-qa/`) 90 days after upload, and keeps the bucket's other rules. Exit code 3 means R2 refused the key: check its permission.
+4. Recommend the owner then swap the admin token for one with **Object Read & Write** on this bucket only, which is all uploading needs, and delete the admin token.
+
 ### H. Models and coder limit
 
 A model for each role, and how many coders may run at once. These are personal choices and cost controls, so they go in `.cistack/settings.json`, never in `docs/agents/`. Models are the names the Agent tool takes: `opus`, `sonnet`, `haiku` or `fable`, each the newest of its family. On a re-run, show the current answers first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" show`.
@@ -102,7 +118,7 @@ Fill the templates and show every file before writing. Let the owner edit them.
 
 - Write the four `docs/agents/` files. Coders can be dispatched only once `issue-tracker.md` and `commands.md` are on the base branch, and QA can run only once `environments.md` is too.
 - Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
-- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Section E writes `.cistack/discord.json` and section H writes `.cistack/settings.json`. Discord settings, models and the coder limit are personal and never go in `docs/agents/`.
+- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Section E writes `.cistack/discord.json`, section F `.cistack/r2.json` and section H `.cistack/settings.json`. Discord and R2 settings, models and the coder limit are personal and never go in `docs/agents/`.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.
 
 ## 6. Done

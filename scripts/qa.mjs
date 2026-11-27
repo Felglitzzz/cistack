@@ -20,8 +20,12 @@
 //     "ran": "<what you did>" (not needed when unverified), "evidence"}] (one each),
 //     "checks": [{"step", "verdict", "evidence"}] (one per agreed command),
 //     "audit": {"high", "critical", "evidence"} or {"unverified": "<why>"} (only when a
-//     lockfile changed), "regressions": ["<what broke>"]}. Works out the result (passed,
-//     failed or unverified), posts it on the pull request and removes the worktree.
+//     lockfile changed), "regressions": ["<what broke>"], and either "videos": ["<path
+//     inside the worktree>"] or "noVideo": "<why>"}. Works out the result (passed,
+//     failed or unverified), uploads the videos (to R2 when .cistack/r2.json is set up,
+//     else into the ticket thread), deletes the local files, posts the report on the
+//     pull request with their links and removes the worktree. A video that couldn't be
+//     uploaded is said in the report; it doesn't change the result.
 //   node scripts/qa.mjs done --pr <n>
 //     For the coordinator: removes the worktree of a run that ended without reporting,
 //     and holds the owner's messages it was given for the next run.
@@ -45,6 +49,7 @@ import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 import { acceptanceCriteria } from "./lib/criteria.mjs";
 import { marker, pullRequest, qaReport, reviewPassed } from "./lib/pr.mjs";
 import { modelFor } from "./lib/settings.mjs";
+import { DISCORD_UPLOAD_LIMIT, tellThread, upload, VIDEO_KINDS, videoFile, videoPlace } from "./lib/video.mjs";
 
 const USAGE = "usage: qa.mjs next --pr <n> | done --pr <n> | start --pr <n> --owner <owner> --project <number> | copy --pr <n> --path <setup file> | post --pr <n> --file <report.json>";
 
@@ -132,6 +137,21 @@ function auditLine(lockfiles, audit) {
   return `${changed} Run the project's dependency audit, \`${audit}\`, and report how many high and critical findings it has.`;
 }
 
+function videoBrief(issue) {
+  const { kind } = videoPlace(issue);
+  if (!kind) {
+    return ["## Video", "", "There is nowhere to put a video (no R2 bucket is set up, and there is no ticket thread), so don't record one: give `noVideo` in your report and say so."];
+  }
+  const goes = kind === "r2" ? "the project's R2 bucket" : `the ticket thread. Keep each file under ${DISCORD_UPLOAD_LIMIT / 1024 / 1024} MiB, Discord's upload limit, or it can't be posted`;
+  return [
+    "## Video",
+    "",
+    `Record the flows you exercise, as video (${VIDEO_KINDS.join(", ")}), with what the project and its agent environment already have for recording. Save each file inside your worktree and list their paths in \`videos\` in your report. If nothing here can record them, give \`noVideo\` with the reason instead.`,
+    "",
+    `Posting your report uploads each video to ${goes}. It then deletes the local file, so don't upload, copy or keep one yourself. Never show a secret on screen.`,
+  ];
+}
+
 function brief({ pr, ticket, run, docs, list, files }) {
   const { worktree } = run;
   const withheld = docs.environment.withheld;
@@ -162,6 +182,8 @@ function brief({ pr, ticket, run, docs, list, files }) {
     auditLine(run.lockfiles, docs.audit),
     "",
     ...environmentLines(docs.environment),
+    "",
+    ...videoBrief(pr.issue),
   ];
   const thread = readCistack("discord.json").webhooks?.qa && readCistack("status.json").threads?.[pr.issue];
   if (thread) {
@@ -291,10 +313,72 @@ function checkedAudit(given, lockfiles, agreedAudit) {
   return { verdict: high + critical ? "failed" : "passed", evidence };
 }
 
+// Every report says what was recorded, or why nothing was, so a video can't be forgotten.
+// A video this run already sent is kept as it was: its local file is gone.
+function checkedVideo({ videos, noVideo }, { worktree, sent = [] }) {
+  const listed = Array.isArray(videos) && videos.length && videos.every((path) => typeof path === "string" && path);
+  if (noVideo === undefined ? !listed : videos !== undefined) {
+    refuse("Give either `videos`, the paths of the videos you recorded, or `noVideo`, why there is none.");
+  }
+  if (noVideo !== undefined) return { noVideo: text(noVideo, "why there is no video") };
+  const files = [...new Set(videos.map((given) => resolve(worktree, given)))].map((at) => {
+    const before = sent.find((video) => video.at === at);
+    return before ? { at, before: before.video } : { at, ...videoFile(worktree, relative(worktree, at)) };
+  });
+  return { files };
+}
+
+// Uploads a video, then deletes the local file, whether or not the upload worked.
+async function publish(file, place, about) {
+  const video = { name: file.name };
+  try {
+    video.url = await upload(place, file, about);
+  } catch (error) {
+    video.error = error.message;
+  } finally {
+    rmSync(file.path, { force: true });
+  }
+  // A video uploaded into the thread is already in it.
+  if (video.url && place.kind !== "r2") return video;
+  const threadError = await tellThread(place, `${about}: ${video.url ?? `${video.name}: upload failed: ${video.error}`}`);
+  return threadError ? { ...video, threadError } : video;
+}
+
+// Kept with the run, so posting the report again doesn't need the deleted file.
+function rememberSent(number, at, video) {
+  const state = readStatus();
+  const run = state.agents.find((a) => a.role === "qa" && a.pr === number);
+  run.sent = [...(run.sent ?? []), { at, video }];
+  writeCistack("status.json", state);
+}
+
+async function publishAll(files, pr) {
+  const place = videoPlace(pr.issue);
+  const about = `QA video of pull request #${pr.number} at ${pr.head.slice(0, 7)}`;
+  const published = [];
+  for (const file of files) {
+    const video = file.before ?? (await publish(file, place, about));
+    if (!file.before) rememberSent(pr.number, file.at, video);
+    published.push(video);
+  }
+  return published;
+}
+
+// A file's name is QA's own words: quoted, so it can't break out or notify anyone.
+const fileName = (name) => `\`${name.replace(/[`\r\n]/g, "'")}\``;
+
+function reportedVideos({ noVideo }, published) {
+  if (noVideo) return [`No video: ${noVideo}`];
+  return published.map(({ name, url, error, threadError }) => {
+    const missed = threadError ? ` (not posted in the ticket thread: ${threadError})` : "";
+    return `- ${fileName(name)}: ${url ?? `upload failed: ${error}`}${missed}`;
+  });
+}
+
 // Anything failed fails the run. Anything unverified keeps it from passing.
 const resultOf = (verdicts) => ["failed", "unverified"].find((v) => verdicts.includes(v)) ?? "passed";
 
-function reportComment({ head, result, criteria, checks, audit, regressions, lockfiles }) {
+function reportComment({ head, result, criteria, checks, audit, regressions, lockfiles, video }) {
   const problems = (verdict) => [
     ...criteria.filter((c) => c.verdict === verdict).map((c) => `${c.id} ${verdict}: ${quoted(c.criterion)} ${c.ran ? `Ran: ${c.ran}. ` : ""}Evidence: ${c.evidence}`),
     ...checks.filter((c) => c.verdict === verdict).map((c) => `${c.step} ${verdict}: ${c.evidence}`),
@@ -323,6 +407,9 @@ function reportComment({ head, result, criteria, checks, audit, regressions, loc
     "",
     "### Dependency audit",
     audit ? `${audit.verdict} (${ticked(lockfiles)} changed): ${audit.evidence}` : "No lockfile changed.",
+    "",
+    "### Video",
+    ...video,
   ];
   if (regressions.length) lines.push("", "### Regressions", ...regressions.map((r) => `- ${r}`));
   return lines.join("\n");
@@ -351,9 +438,10 @@ function forgetRun(number, { reported = false } = {}) {
   writeCistack("status.json", state);
 }
 
-function post(opts) {
+async function post(opts) {
   const input = readInput(opts.file);
-  const { head, worktree, lockfiles } = currentRun(opts.pr);
+  const run = currentRun(opts.pr);
+  const { head, worktree, lockfiles } = run;
   const pr = pullRequest(opts.pr);
   if (pr.head !== head) refuse(`The pull request's head is now ${pr.head}, not the ${head} this run checked. Its report no longer counts.`);
   const root = projectRoot();
@@ -362,16 +450,19 @@ function post(opts) {
   const checks = checkedChecks(input.checks, docs.steps);
   const audit = checkedAudit(input.audit, lockfiles, docs.audit);
   const regressions = (input.regressions ?? []).map((r) => text(r, "each regression"));
+  // The last check: what follows can't be taken back.
+  const video = checkedVideo(input, run);
+  const published = video.files ? await publishAll(video.files, pr) : [];
 
   const verdicts = [...criteriaGiven, ...checks, ...(audit ? [audit] : [])].map((v) => v.verdict);
   const result = resultOf([...verdicts, ...regressions.map(() => "failed")]);
-  const body = reportComment({ head, result, criteria: criteriaGiven, checks, audit, regressions, lockfiles });
+  const body = reportComment({ head, result, criteria: criteriaGiven, checks, audit, regressions, lockfiles, video: reportedVideos(video, published) });
   const url = gh(["pr", "comment", String(pr.number), "--body-file", "-"], { input: body }).trim();
 
   if (existsSync(opts.file)) unlinkSync(opts.file);
   const worktreeRemoved = removeWorktree(root, worktree);
   if (worktreeRemoved) forgetRun(pr.number, { reported: true });
-  return { pr: pr.number, issue: pr.issue, head, result, url, worktreeRemoved };
+  return { pr: pr.number, issue: pr.issue, head, result, url, videos: published, worktreeRemoved };
 }
 
 function done(opts) {
@@ -406,4 +497,4 @@ function next(opts) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
-console.log(JSON.stringify({ next, start, copy, post, done }[opts.command](opts), null, 2));
+console.log(JSON.stringify(await { next, start, copy, post, done }[opts.command](opts), null, 2));

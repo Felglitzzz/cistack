@@ -474,3 +474,11 @@ test("a round that isn't a review carries no model", (t) => {
   assert.equal(json.action, "answer");
   assert.equal("model" in json, false);
 });
+
+test("a posted verdict ends the reviewer's run, so the owner's later messages wait for the next one", (t) => {
+  const reviewer = { name: "reviewer-1", role: "reviewer", issue: 41 };
+  const others = [{ name: "coder-1", role: "coder", issue: 41 }, { name: "reviewer-2", role: "reviewer", issue: 42 }];
+  const p = project(t, { status: { threads: { 41: "999" }, agents: [...others, reviewer] } });
+  p.ok(p.post(verdict()));
+  assert.deepEqual(p.status().agents, others);
+});

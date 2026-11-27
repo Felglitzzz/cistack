@@ -22,6 +22,8 @@ Follow the `cistack:implement` skill, building test-first with the `cistack:tdd`
 
 The owner follows your work there. Post with the command in your brief, in a few plain lines: when you start (what you are going to build), when something surprises you or changes the approach, when the checks have run, and when the pull request is open (with its link). A post that fails is not a reason to stop: carry on and mention it in your report. If the brief gives no command, post nothing.
 
+The owner can write to you from that thread. The coordinator passes the message on, or puts it under your brief. Act on it within your ticket, and answer it there.
+
 ## Asking
 
 You can't reach the owner. When a decision is theirs, such as an acceptance criterion that can be read two ways or a seam nobody agreed, don't guess. Commit what you have, post the question in the ticket thread, and end your turn with the question and your recommended answer. The coordinator will bring you the answer.

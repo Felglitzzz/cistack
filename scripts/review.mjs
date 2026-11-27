@@ -165,6 +165,14 @@ function progress(pr) {
 
 const comment = (pr, body) => gh(["pr", "comment", String(pr.number), "--body-file", "-"], { input: body }).trim();
 
+// A reviewer's run ends with its verdict, so the owner's later messages wait for the next one.
+function forgetReviewer(issue) {
+  const status = readCistack("status.json");
+  if (!status.agents) return;
+  status.agents = status.agents.filter((a) => !(a.role === "reviewer" && a.issue === issue));
+  writeCistack("status.json", status);
+}
+
 function post(opts) {
   const input = readInput(opts.file);
   const pr = pullRequest(opts.pr);
@@ -174,6 +182,7 @@ function post(opts) {
   const verdict = checkedVerdict(input, pr, verdicts.length + 1, disputes);
   const url = comment(pr, verdictComment(verdict));
   unlinkSync(opts.file);
+  forgetReviewer(pr.issue);
   return { pr: pr.number, round: verdict.round, head: verdict.head, score: score(verdict), findings: verdict.findings, url };
 }
 

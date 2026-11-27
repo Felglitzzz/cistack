@@ -474,3 +474,28 @@ test("a ticket that says it needs no shared resource starts without an environme
   assert.equal(p.start(41).code, 0);
   assert.equal("resources" in p.status().agents[0], false);
 });
+
+test("start hands the owner's held coder messages to the coder in its brief, once", (t) => {
+  const p = project(t);
+  const held = [
+    { issue: 41, role: "coder", message: "8001", words: "@coder use semicolons.\nNot commas." },
+    { issue: 41, role: "qa", message: "8002", words: "@qa check an empty report" },
+    { issue: 42, role: "coder", message: "8003", words: "@coder for another ticket" },
+    { issue: 41, role: "coder", message: "8004", words: "@coder and quote the names" },
+  ];
+  p.writeStatus({ held });
+  const { code, stderr, json } = p.start(41);
+  assert.equal(code, 0, stderr);
+  assert.match(json.brief, /## From the owner/);
+  assert.ok(json.brief.includes("> @coder use semicolons.\n> Not commas.\n\n> @coder and quote the names"), json.brief);
+  assert.doesNotMatch(json.brief, /empty report|another ticket/);
+  assert.deepEqual(p.status().held, [held[1], held[2]], "only the other messages are still held");
+});
+
+test("a reviewer recorded on the ticket doesn't stand in the way of its coder", (t) => {
+  const p = project(t);
+  p.writeStatus({ agents: [{ name: "reviewer-1", role: "reviewer", issue: 41 }] });
+  const { code, stderr, json } = p.start(41);
+  assert.equal(code, 0, stderr);
+  assert.doesNotMatch(json.brief, /From the owner/);
+});

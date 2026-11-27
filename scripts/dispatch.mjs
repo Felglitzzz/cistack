@@ -9,7 +9,8 @@
 //     Creates the ticket's worktree and branch, copies the setup files in (none may set
 //     a variable the agent environment withholds), moves the ticket to In progress,
 //     records the coder (and the shared resources its ticket needs) in .cistack/status.json
-//     and prints the coder's model and the brief to dispatch it with. With --pr <n>, the
+//     and prints the coder's model and the brief to dispatch it with, which ends with the
+//     owner's messages held for this ticket's coder (route.mjs). With --pr <n>, the
 //     ticket's pull request is already open: the coder is there to answer its review or QA,
 //     and the ticket is moved to In review.
 //   node scripts/dispatch.mjs opened --issue <n> --pr <n> --owner <owner> --project <number>
@@ -29,6 +30,7 @@ import { environment, setupFiles } from "./lib/docs.mjs";
 import { refuseWithheld } from "./lib/env-files.mjs";
 import { ghJson } from "./lib/gh.mjs";
 import { git, onBase } from "./lib/git.mjs";
+import { handOver } from "./lib/inbox.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 import { listedResources, neededResources, resolveResources } from "./lib/resources.mjs";
 import { modelFor, readSettings } from "./lib/settings.mjs";
@@ -99,7 +101,8 @@ function dispatchable(number, pr) {
 
   if (issue.state !== "OPEN") refuse(`#${number} is closed.`);
   if (issue.subIssues.totalCount > 0) refuse(`#${number} is a spec. Dispatch one of its tickets.`);
-  const agent = (readStatus().agents ?? []).find((a) => a.issue === number);
+  // A reviewer works in a worktree of its own, so its ticket can still have a coder.
+  const agent = (readStatus().agents ?? []).find((a) => a.issue === number && a.role !== "reviewer");
   if (agent) refuse(`#${number} is already ${agent.name}'s, in ${agent.worktree}. If that coder is gone, remove its entry from .cistack/status.json.`);
   const open = issue.closedByPullRequestsReferences.nodes.find((pr) => pr.state === "OPEN");
   if (pr && open?.number !== Number(pr)) refuse(`#${number} has no open pull request #${pr}.`);
@@ -219,10 +222,13 @@ function start(opts) {
   const name = `coder-${state.coderCount}`;
   state.agents = [...(state.agents ?? []), { name, role: "coder", issue: issue.number, worktree, branch, ...(resources.length ? { resources } : {}) }];
   if (opts.thread) state.threads = { ...state.threads, [issue.number]: opts.thread };
+  // A coder keeps its entry until its ticket merges, so its messages aren't noted on it.
+  const owners = handOver(state, { issue: issue.number, role: "coder" });
   writeCistack("status.json", state);
 
   const thread = hasCoderWebhook() ? opts.thread : undefined;
-  return { name, model: modelFor("coder"), issue: issue.number, title: issue.title, branch, base, worktree, brief: brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr: opts.pr }) };
+  const task = brief({ name, issue, worktree, branch, base, resumed, files, withheld, thread, pr: opts.pr });
+  return { name, model: modelFor("coder"), issue: issue.number, title: issue.title, branch, base, worktree, brief: [task, owners].filter(Boolean).join("\n\n") };
 }
 
 function opened(opts) {

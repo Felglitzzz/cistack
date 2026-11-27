@@ -459,3 +459,18 @@ test("bad arguments or input exit 1", (t) => {
   assert.equal(garbled.code, 1);
   assert.match(garbled.stderr, /isn't JSON/);
 });
+
+test("the reviewer's brief comes with its configured model, and a changed model applies from the next round", (t) => {
+  const p = project(t);
+  assert.equal(p.next().model, "opus");
+  writeFileSync(join(p.repo, ".cistack/settings.json"), JSON.stringify({ models: { reviewer: "fable", coder: "haiku" } }));
+  assert.equal(p.next().model, "fable");
+});
+
+test("a round that isn't a review carries no model", (t) => {
+  const p = project(t);
+  p.ok(p.post(verdict([finding("risk")])));
+  const json = p.next();
+  assert.equal(json.action, "answer");
+  assert.equal("model" in json, false);
+});

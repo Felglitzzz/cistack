@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.8.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging and a spec's signoff work, with Discord. One coder builds at a time. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.9.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging and a spec's signoff work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -27,7 +27,7 @@ In the target repository, inside Claude Code:
 /cistack:onboard
 ```
 
-Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run and the environment they run in, asks which environment variables an agent may hold, writes the answers to `docs/agents/`, and connects a Discord channel. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
+Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run and the environment they run in, asks which environment variables an agent may hold, records a model for each role and how many coders may run at once (in the gitignored `.cistack/settings.json`), writes the answers to `docs/agents/`, and connects a Discord channel. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
 
 ## Start the coordinator
 
@@ -48,6 +48,8 @@ Tell the coordinator what you want, in the terminal or the project channel. It o
 ## Build a ticket
 
 Ask the coordinator to build a ticket whose blockers have merged. It opens a ticket thread, gives a fresh coder its own worktree under `.claude/worktrees/` with your setup files copied in, and moves the card to In progress. The coder works test-first, runs your agreed checks, and opens a pull request that closes the ticket; the card moves to In review. Onboarding's `docs/agents/` files must be on the base branch first.
+
+Ask for a whole spec and the coordinator dispatches every ready ticket, several coders at once, up to your coder limit (2 unless you chose another). A change to the limit applies from the next dispatch. Tickets that need the same shared resource, such as a database or a port, take turns; the rest run side by side. A ticket names its resources under `## Shared resources`, using the names in `docs/agents/environments.md`. Every agent runs on the model you chose for its role: by default Opus for the coordinator, reviewer and teacher, Sonnet for coders and QA, and Fable for the advisor.
 
 ## Review
 

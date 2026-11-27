@@ -150,6 +150,8 @@ test("the push guard refuses any push to the base branch, however it is spelled,
     "git push -u origin main",
     "git push origin +main",
     "git push --force origin main",
+    "git push --force-with-lease origin main",
+    "git push --force-with-lease origin HEAD:main",
     "git push origin HEAD:main",
     "git push origin ticket/41-export-button:main",
     "git push origin HEAD:refs/heads/main",
@@ -173,7 +175,7 @@ test("the push guard refuses any push to the base branch, however it is spelled,
     const r = push(p, command, { cwd: p.worktree });
     assert.equal(r.code, 2, `${command}: ${r.stderr}`);
   }
-  assert.equal(refusals(p).length, 19);
+  assert.equal(refusals(p).length, 21);
   assert.equal(refusals(p)[0].hook, "push");
   assert.equal(refusals(p)[0].agent, "cistack:coder");
 });
@@ -183,6 +185,8 @@ test("the push guard lets a ticket branch be pushed, rewritten and deleted", (t)
   for (const command of [
     "git push -u origin ticket/41-export-button",
     "git push --force-with-lease origin ticket/41-export-button",
+    `git -C "${p.worktree}" push --force-with-lease origin ticket/41-export-button`,
+    "git push --force-with-lease origin HEAD:ticket/41-export-button",
     "git push origin --delete ticket/41-export-button",
     "git push origin HEAD:ticket/41-export-button",
     "git push origin main:ticket/41-export-button",

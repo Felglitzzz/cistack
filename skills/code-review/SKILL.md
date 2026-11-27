@@ -17,6 +17,7 @@ Your working directory is a worktree of your own. Note the branch it is on (`git
 - The ticket and its spec, from GitHub.
 - The project's standards: `CLAUDE.md` or `AGENTS.md`, contributing and coding-standard files, `docs/agents/`, and the glossary and ADRs that `docs/agents/domain.md` names.
 - The diff, then the callers, types and tests around it.
+- A `## Conflict resolution` section in the pull request's body, when the coder resolved a merge conflict. For each file it lists, check in the diff and the base's history (`git log origin/<base> -- <file>`) that the other pull request's change is still there beside the ticket's. A change that was dropped fails `correctness`, naming the file and the lost change.
 
 ## 3. Security review
 

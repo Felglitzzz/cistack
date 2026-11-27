@@ -9,7 +9,9 @@
 //     What the pull request needs now: not-ready (with `missing`: review, qa), rebase
 //     (the base moved), wait (another pull request is being merged) or merge.
 //   node scripts/merge.mjs merge --pr <n> --owner <owner> --project <number>
-//     Squash-merges the pull request, then does what `cleanup` does.
+//     Squash-merges the pull request, then does what `cleanup` does. The output's `recheck`
+//     tells the coordinator to check the waiting tickets again; `freed` names the coder's
+//     place and shared resources it released, or is null when the coder's work was kept.
 //   node scripts/merge.mjs rebase --pr <n>
 //     When the base moved: has GitHub rebase the pull request's commits onto it. If the
 //     change itself is the same afterwards, the reviewer's pass carries over to the new
@@ -33,6 +35,9 @@ import { git, patchId, tryGit } from "./lib/git.mjs";
 import { boardStatus } from "./lib/board.mjs";
 import { CHECKLIST, failing, fetchPullRequest, marker, missingPasses, pullRequest, reviewPassed, verdictOnHead } from "./lib/pr.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
+
+// What to do about a conflict: the coder's procedure is in the implement skill.
+const CONFLICT_HINT = 'If there is a conflict, send the coder the conflict and have it follow the "Resolving a merge conflict" section of the cistack:implement skill.';
 
 const USAGE = "usage: merge.mjs next --pr <n> | merge --pr <n> --owner <owner> --project <number> | rebase --pr <n> | override --pr <n> --reason <text> [--accept-security <ids>] | cleanup --pr <n> --owner <owner> --project <number>";
 
@@ -83,7 +88,7 @@ function rebase(opts) {
   const root = projectRoot();
   if (!baseMoved(root, pr)) refuse(`The base ${pr.base} hasn't moved since pull request #${pr.number}'s branch was cut: there is nothing to rebase.`);
   const before = patchId(root, pr.base, pr.head);
-  gh(["pr", "update-branch", String(pr.number), "--rebase"], { hint: "If there is a conflict, ask the coder to rebase the branch onto the base and push it." });
+  gh(["pr", "update-branch", String(pr.number), "--rebase"], { hint: CONFLICT_HINT });
   const { head } = pullRequest(opts.pr);
   if (head === pr.head) refuse(`GitHub left pull request #${pr.number}'s head at ${head}: nothing was rebased.`);
   git(root, "fetch", "origin", pr.base, `pull/${pr.number}/head`);
@@ -167,6 +172,13 @@ function unmergedWork(root, pr, worktree, tip) {
   return null;
 }
 
+// What the coordinator does next: tickets may have been waiting for this merge, for a coder's
+// place or for a shared resource, and nothing else brings them back to mind.
+function recheck(pr, freed) {
+  const free = freed ? ` ${freed.coder}'s place${freed.resources.length ? ` and ${freed.resources.map((r) => `\`${r}\``).join(", ")}` : ""} ${freed.resources.length ? "are" : "is"} free, and` : "";
+  return `Check the tickets that were waiting again:${free} the merge of #${pr.issue} may have unblocked tickets. Run dispatch.mjs check for each ticket in Todo that waited on the coder limit, a shared resource or this ticket, and dispatch those that pass.`;
+}
+
 // Removes what a merged pull request leaves behind, and shows its ticket as Done.
 function finish(pr, opts, root) {
   const done = { removed: [], kept: [] };
@@ -189,7 +201,9 @@ function finish(pr, opts, root) {
     }
   }
   const status = readCistack("status.json");
-  status.agents = (status.agents ?? []).filter((a) => !(a.role === "coder" && a.issue === pr.issue && !done.kept.length));
+  const coder = (status.agents ?? []).find((a) => a.role === "coder" && a.issue === pr.issue);
+  const freed = coder && !done.kept.length ? { coder: coder.name, resources: coder.resources ?? [] } : null;
+  status.agents = (status.agents ?? []).filter((a) => a !== coder || !freed);
   if (status.reviewRounds) delete status.reviewRounds[pr.number];
   writeCistack("status.json", status);
 
@@ -199,6 +213,8 @@ function finish(pr, opts, root) {
     issue: pr.issue,
     head: pr.head,
     ...done,
+    freed,
+    recheck: recheck(pr, freed),
     notice: `Merged pull request #${pr.number} (squash) at ${pr.head.slice(0, 7)}: ticket #${pr.issue} is Done. ${pr.url}`,
   };
 }

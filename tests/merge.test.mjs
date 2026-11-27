@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, project, scripts } from "./fakes/project.mjs";
 
@@ -202,7 +202,7 @@ test("rebase refuses when the base hasn't moved, and reports a conflict for the 
   const c = conflict.merge("rebase", "--pr", "60");
   assert.equal(c.code, 2);
   assert.match(c.stderr, /conflict/);
-  assert.match(c.stderr, /ask the coder to rebase/);
+  assert.match(c.stderr, /Resolving a merge conflict.*cistack:implement/);
 });
 
 const override = (p, ...more) => p.merge("override", "--pr", "60", "--reason", "Owner accepts the risk: it ships behind a flag.", ...more);
@@ -288,4 +288,44 @@ test("review and QA treat an overridden head as reviewed", (t) => {
   p.ok(override(p));
   const next = p.ok(p.runScript(join(scripts, "review.mjs"), ["next", "--pr", "60", ...p.boardFlags]));
   assert.equal(next.action, "passed");
+});
+
+test("a merge tells the coordinator to check the waiting tickets again, naming the place and resources it freed", (t) => {
+  const p = project(t);
+  p.patchStatus((s) => (s.agents[0].resources = ["database"]));
+  const json = p.ok(p.merge("merge", "--pr", "60", ...p.boardFlags));
+  assert.deepEqual(json.freed, { coder: "coder-1", resources: ["database"] });
+  assert.match(json.recheck, /dispatch\.mjs check/);
+  assert.match(json.recheck, /coder-1's place and `database`/);
+  assert.match(json.recheck, /waiting/);
+});
+
+test("a merge and a cleanup say to check the waiting tickets even when no coder entry was left, since the merge may unblock tickets", (t) => {
+  const p = project(t, { reviewed: false, qaPassed: false });
+  p.patchStatus((s) => (s.agents = []));
+  p.patchState((s) => {
+    s.prs[0].state = "MERGED";
+    s.issues[1].state = "CLOSED";
+  });
+  const json = p.ok(p.merge("cleanup", "--pr", "60", ...p.boardFlags));
+  assert.equal(json.freed, null);
+  assert.match(json.recheck, /dispatch\.mjs check/);
+  assert.match(json.recheck, /unblocked/);
+});
+
+test("a coder whose worktree is kept still holds its place, and the merge doesn't say it was freed", (t) => {
+  const p = project(t);
+  writeFileSync(join(p.worktree, "scratch.txt"), "half done\n");
+  const json = p.ok(p.merge("merge", "--pr", "60", ...p.boardFlags));
+  assert.equal(json.freed, null);
+  assert.equal(p.status().agents.length, 1);
+  assert.match(json.recheck, /dispatch\.mjs check/);
+});
+
+test("the section the conflict hint names exists in the coder's skill, with the steps the owner asked for", () => {
+  const skill = readFileSync(join(scripts, "../skills/implement/SKILL.md"), "utf8");
+  const [, section] = skill.split(/^## Resolving a merge conflict$/m);
+  assert.ok(section, "implement has a \"Resolving a merge conflict\" section");
+  for (const step of [/origin\/<base> -- <file>/, /gh pr view/, /both sides' intent/, /BLOCKED/, /full tests|whole agreed checks/, /--force-with-lease/, /## Conflict resolution/]) assert.match(section, step);
+  assert.match(readFileSync(join(scripts, "../skills/merge-loop/SKILL.md"), "utf8"), /Resolving a merge conflict/);
 });

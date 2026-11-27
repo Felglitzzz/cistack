@@ -60,3 +60,20 @@ test("leaves the Discord channel out of a project without Discord", { skip }, (t
   const run = start(p, { path: ".cistack/start.sh" });
   assert.deepEqual(run.argv, COORDINATOR);
 });
+
+test("starts the coordinator on the model the owner chose for it, which later flags can still override", { skip }, (t) => {
+  const p = project(t);
+  writeFileSync(join(p.root, ".cistack/settings.json"), JSON.stringify({ models: { coder: "haiku", coordinator: "fable" }, coderLimit: 3 }, null, 2));
+  copyFileSync(script, join(p.root, ".cistack/start.sh"));
+  const run = start(p, { path: ".cistack/start.sh", args: ["--model", "opus"] });
+  assert.deepEqual(run.argv, [...COORDINATOR, "--model", "fable", "--model", "opus", ...DISCORD]);
+});
+
+test("a coordinator model the Agent tool doesn't know stops the start", { skip }, (t) => {
+  const p = project(t);
+  writeFileSync(join(p.root, ".cistack/settings.json"), JSON.stringify({ models: { coordinator: "gpt" } }));
+  const run = spawnSync("sh", [script], { cwd: p.root, env: p.env, encoding: "utf8" });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /coordinator.*gpt.*opus, sonnet, haiku or fable/);
+  assert.equal(run.stdout, "");
+});

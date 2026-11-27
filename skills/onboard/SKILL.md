@@ -56,7 +56,7 @@ Where coders and QA run the project's code. cistack records these slots and assu
 
 1. **Agent environment**: where agents run the code, and what it connects to.
 2. **Disposable**: may agents seed, reset or break it? Recommend `no` unless it is clearly local and nobody else depends on it. QA seeds, resets or runs destructive checks only on `yes`.
-3. **Shared resources**: what only one agent can use at a time, such as a port or a database.
+3. **Shared resources**: what only one agent can use at a time, such as a port or a database. Give each a short name, which tickets use to say they need it, and write them as bullets: `` - `database`: the local Postgres ``.
 4. **Seed and cleanup commands**, each can be `none`.
 5. **Live integrations**: connections whose calls have real effects, such as sending email, charging money or starting builds.
 6. **Environment variables**: take the names from `env-vars.mjs`, and add any you find that it missed, such as in compose or deploy config. Ask the owner about **each one**: may an agent environment hold its value? Recommend `withheld` for anything that could be a live integration's credential, and `allowed` for plain settings and for local or test-mode credentials. A numbered list with a recommendation for each is fine; one the owner doesn't answer is `withheld`. Never ask for a value.
@@ -79,6 +79,15 @@ The coordinator is the Discord bot, through the official Discord plugin. Every o
    This lets every message from the owner reach the coordinator, with no @mention needed, and nobody else's.
 5. Optionally, the owner can give each `cistack-<role>` webhook an avatar under the channel's Settings → Integrations → Webhooks.
 
+### H. Models and coder limit
+
+A model for each role, and how many coders may run at once. These are personal choices and cost controls, so they go in `.cistack/settings.json`, never in `docs/agents/`. Models are the names the Agent tool takes: `opus`, `sonnet`, `haiku` or `fable`, each the newest of its family. On a re-run, show the current answers first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" show`.
+
+1. **Models**: recommend coordinator, reviewer and teacher on `opus`; coder and QA on `sonnet`; advisor on `fable`. Ask whether to change any.
+2. **Coder limit**: how many coders may build at once. Recommend 2. A coder keeps its place until its pull request has merged, so the limit also bounds the work waiting on review and QA. The owner can change it later, and it applies from the next dispatch.
+
+Record the answers with `node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --model coder=opus --coder-limit 3` (leave out what stays), and show the result.
+
 ## 4. Draft
 
 Fill the templates and show every file before writing. Let the owner edit them.
@@ -93,7 +102,7 @@ Fill the templates and show every file before writing. Let the owner edit them.
 
 - Write the four `docs/agents/` files. Coders can be dispatched only once `issue-tracker.md` and `commands.md` are on the base branch, and QA can run only once `environments.md` is too.
 - Put the `## Agent skills` block in exactly one file. If `CLAUDE.md` exists and is more than an import of or symlink to `AGENTS.md`, edit `CLAUDE.md`. Otherwise, if `AGENTS.md` exists, edit `AGENTS.md`. If neither exists, ask which to create. If the block already exists, replace it in place. Leave every other section untouched.
-- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Only section E writes there (`.cistack/discord.json`). Discord settings are personal and never go in `docs/agents/`.
+- Create `.cistack/` and add a `.cistack/` line to `.gitignore`, creating `.gitignore` if needed. Section E writes `.cistack/discord.json` and section H writes `.cistack/settings.json`. Discord settings, models and the coder limit are personal and never go in `docs/agents/`.
 - Don't commit. List the changed files and offer to commit them on a new branch and open a pull request.
 
 ## 6. Done
@@ -105,6 +114,6 @@ claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@cl
 alias cistack='claude /cistack:wake-up --agent cistack:coordinator --channels plugin:discord@claude-plugins-official'
 ```
 
-Keep `/cistack:wake-up` first on the line: without it the coordinator does not wake up, and after `--channels` it would be read as a channel. Without Discord, `claude /cistack:wake-up --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.
+The coordinator runs on the model chosen in section H: `sh .cistack/start.sh` passes it on. For the commands above, add `--model <model>` after `--agent cistack:coordinator` when it isn't `opus`. Keep `/cistack:wake-up` first on the line: without it the coordinator does not wake up, and after `--channels` it would be read as a channel. Without Discord, `claude /cistack:wake-up --agent cistack:coordinator` works too, reporting in the terminal only. The owner can edit `docs/agents/*.md` directly later; re-running onboarding shows those answers again.
 
 Then offer a start script for when they'll be away from this machine: copy `${CLAUDE_PLUGIN_ROOT}/scripts/start.sh` to `.cistack/start.sh`, leaving an existing one alone, and have them run `sh .cistack/start.sh`. Say what it turns on: Remote Control, so they can answer permission prompts in the Claude app (it needs a claude.ai subscription; **Push when actions required** in `/config` notifies them); auto mode, so there are fewer prompts; and on macOS, no idle sleep. It's theirs to edit. Without Remote Control, Discord sends prompts only to people paired with the bot for direct messages, which the owner sets up themselves with `/discord:access`.

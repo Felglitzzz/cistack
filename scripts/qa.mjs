@@ -10,7 +10,7 @@
 //   node scripts/qa.mjs start --pr <n> --owner <owner> --project <number>
 //     For the coordinator: once the reviewer has passed the head, moves the ticket to
 //     In QA, creates a new worktree at that head, records the run in
-//     .cistack/status.json and prints the brief to dispatch QA with.
+//     .cistack/status.json and prints the brief and the model to dispatch QA with.
 //   node scripts/qa.mjs copy --pr <n> --path <setup file>
 //     For QA: copies one of the project's setup files into its worktree, unless it holds
 //     a variable the agent environment may not.
@@ -41,6 +41,7 @@ import { git, onBase } from "./lib/git.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 import { acceptanceCriteria } from "./lib/criteria.mjs";
 import { marker, pullRequest, qaReport, reviewPassed } from "./lib/pr.mjs";
+import { modelFor } from "./lib/settings.mjs";
 
 const USAGE = "usage: qa.mjs next --pr <n> | done --pr <n> | start --pr <n> --owner <owner> --project <number> | copy --pr <n> --path <setup file> | post --pr <n> --file <report.json>";
 
@@ -213,7 +214,7 @@ function start(opts) {
   const state = readStatus();
   state.agents = [...(state.agents ?? []), run];
   writeCistack("status.json", state);
-  return { pr: pr.number, issue: pr.issue, head: pr.head, worktree: run.worktree, brief: brief({ pr, ticket, run, docs, list, files }) };
+  return { pr: pr.number, issue: pr.issue, head: pr.head, model: modelFor("qa"), worktree: run.worktree, brief: brief({ pr, ticket, run, docs, list, files }) };
 }
 
 function copy(opts) {

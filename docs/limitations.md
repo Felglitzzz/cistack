@@ -39,7 +39,7 @@ Inside it, Node and other tools would search upwards and find your checkout's in
 Three hooks refuse, and log to `.cistack/refusals.log`: a merge without both passes on the head, a push to the base branch, and a coder's or QA's file write outside its worktree. They run only in an onboarded project (one with `docs/agents/issue-tracker.md`), and they fail closed: a call they can't check is refused.
 
 - They read a shell command line, not run it. `gh pr merge` and `git push` are seen through `cd`, `-C`, `&&`, pipes, `sh -c`, `eval` and a leading `VAR=value` or `sudo`. A merge or push assembled where they can't look (a variable, an alias, a script file) is not seen. The merge guard also refuses the API calls that merge a pull request, and the GraphQL merge mutations, since those can't be tied to a pull request.
-- The write guard covers Claude Code's file tools (Write, Edit, MultiEdit, NotebookEdit), not a shell command that redirects output into a file. It learns who is acting from the hook's `agent_type`, which says `cistack:coder` or `cistack:qa` but not which of several coders, so with more than one coder (a later version) it will allow any worktree recorded for the role.
+- The write guard covers Claude Code's file tools (Write, Edit, MultiEdit, NotebookEdit), not a shell command that redirects output into a file. It learns who is acting from the hook's `agent_type`, which says `cistack:coder` or `cistack:qa` but not which of several coders, so with several coders running it allows any worktree recorded for the role: a coder is kept out of another coder's worktree by its instructions, not by the hook.
 - Agents act with your GitHub login, so a pass on a pull request is only a comment your login posted. The hooks and scripts count only comments posted with your login, and anything with that login can post one. The owner's override is kept apart for this reason: it is in `.cistack/overrides.json`, written only by `scripts/merge.mjs override`, which the hook refuses to every role but the coordinator, and the write guard keeps coders and QA from editing the file. A shell command from another agent could still write it.
 - Your own terminal isn't guarded: the hooks run for Claude Code's tool calls, not for what you type yourself.
 
@@ -50,6 +50,12 @@ The script gives QA seed and cleanup commands only when the environment is marke
 ## QA reports what it saw
 
 The script requires a verdict and evidence for every criterion and agreed command, and works out the result. It takes QA's word for the evidence and for the audit's counts. A lockfile change is recognised by the file's name (`package-lock.json`, `yarn.lock`, `Cargo.lock`, `go.sum` and the other common ones, listed in `scripts/qa.mjs`). QA has a shell but no browser tool: what it can't drive from there is unverified.
+
+## Parallel coders hold their place until they merge
+
+A coder counts against the coder limit, and its ticket's shared resources stay taken, from dispatch until the ticket's pull request has merged. So coders waiting on review or QA still use up places: with a limit of 2, two open pull requests hold the next ticket back until one merges. Wake-up clears every entry from an earlier session, since none of those agents is still running.
+
+Two tickets that need the same shared resource take turns only when each ticket lists it under `## Shared resources`, with the name `docs/agents/environments.md` gives it. The script refuses a name the doc doesn't list, but it can't know that a ticket forgot to list a resource it uses. Nothing stops a coder from using a resource its ticket didn't list.
 
 ## Away from your machine
 

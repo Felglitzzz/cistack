@@ -12,6 +12,8 @@ Agents may seed, reset or break the agent environment only when it says `Disposa
 
 ## Shared resources
 
+One bullet per resource, with its name in backticks. Tickets name the ones they need, and tickets that need the same one never run at the same time. Write `none` when there are none.
+
 {{sharedResources}}
 
 ## Seed and cleanup

@@ -17,6 +17,16 @@ fi
 if grep -q '"name": *"cistack"' "$plugin/.claude-plugin/plugin.json" 2>/dev/null; then
   set -- --plugin-dir "$plugin" "$@"
 fi
+# The model the owner chose for the coordinator, if they chose one. This reads the
+# settings file directly: a copy of this script may have no cistack checkout beside it.
+if [ -f .cistack/settings.json ]; then
+  model=$(sed -n 's/.*"coordinator" *: *"\([^"]*\)".*/\1/p' .cistack/settings.json | head -n 1)
+  case "$model" in
+    "") ;;
+    opus | sonnet | haiku | fable) set -- --model "$model" "$@" ;;
+    *) echo "The coordinator's model in .cistack/settings.json is \"$model\". Use opus, sonnet, haiku or fable." >&2; exit 1 ;;
+  esac
+fi
 set -- claude /cistack:wake-up --agent cistack:coordinator --remote-control --permission-mode auto "$@"
 
 if command -v caffeinate >/dev/null 2>&1; then

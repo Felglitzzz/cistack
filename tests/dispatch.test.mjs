@@ -340,3 +340,137 @@ test("the coder's brief keeps withheld variables out of its commands", (t) => {
   assert.equal(code, 0, stderr);
   assert.ok(json.brief.includes(`cd "${json.worktree}" && unset STRIPE_KEY && <command>`), json.brief);
 });
+
+// Parallel coders.
+
+const free = (number, title, over = {}) => ticket({ number, title, blockedBy: [], ...over });
+const three = [free(41, "Export button"), free(42, "Import button"), free(43, "Share button"), free(44, "Print button"), spec];
+const saveSettings = (p, settings) => put(p.repo, ".cistack/settings.json", JSON.stringify(settings));
+
+test("start runs two coders at once by default, and refuses a third until one of them is done", (t) => {
+  const p = project(t, { issues: three });
+  assert.equal(p.start(41).code, 0);
+  assert.equal(p.start(42).code, 0);
+
+  const third = p.start(43);
+  assert.equal(third.code, 5);
+  assert.match(third.stderr, /coder limit is 2.*coder-1 has #41.*coder-2 has #42/s);
+  assert.equal(worktrees(p.repo), 3);
+  assert.equal(p.column(43), null);
+  assert.deepEqual(p.status().agents.map((a) => a.issue), [41, 42]);
+
+  // A coder's ticket merging frees its place.
+  p.writeStatus({ ...p.status(), agents: p.status().agents.filter((a) => a.issue !== 41) });
+  const later = p.start(43);
+  assert.equal(later.code, 0, later.stderr);
+  assert.equal(later.json.name, "coder-3");
+});
+
+test("check also says a ticket must wait when the coder limit is reached", (t) => {
+  const p = project(t, { issues: three });
+  saveSettings(p, { coderLimit: 1 });
+  assert.equal(p.check(42).code, 0);
+  assert.equal(p.start(41).code, 0);
+  const { code, stderr } = p.check(42);
+  assert.equal(code, 5);
+  assert.match(stderr, /coder limit is 1/);
+});
+
+test("a changed coder limit applies from the next dispatch", (t) => {
+  const p = project(t, { issues: three });
+  saveSettings(p, { coderLimit: 1 });
+  assert.equal(p.start(41).code, 0);
+  assert.equal(p.start(42).code, 5);
+
+  saveSettings(p, { coderLimit: 3 });
+  assert.equal(p.start(42).code, 0);
+  assert.equal(p.start(43).code, 0);
+
+  // Lowering it doesn't stop coders that are running; it holds the next dispatch back.
+  saveSettings(p, { coderLimit: 1 });
+  assert.deepEqual(p.status().agents.map((a) => a.issue), [41, 42, 43]);
+  assert.equal(p.start(44).code, 5);
+});
+
+test("a QA run does not use up a coder's place", (t) => {
+  const p = project(t, { issues: three });
+  saveSettings(p, { coderLimit: 1 });
+  p.writeStatus({ agents: [{ name: "qa", role: "qa", issue: 40, pr: 50, head: "abc", worktree: "/tmp/x", lockfiles: [] }] });
+  assert.equal(p.start(41).code, 0);
+});
+
+test("start prints the coder's configured model, and a changed model applies from the next dispatch", (t) => {
+  const p = project(t, { issues: three });
+  assert.equal(p.start(41).json.model, "sonnet");
+  saveSettings(p, { models: { coder: "opus", qa: "haiku" } });
+  assert.equal(p.start(42).json.model, "opus");
+});
+
+// Shared resources.
+
+const resourcesDoc = "# Environments\n\n## Shared resources\n\n- `database`: the local Postgres, one schema\n- `port 3000`: the dev server\n\n## Seed and cleanup\n";
+const needing = (...names) => `## What to build\n\nA thing.\n\n## Shared resources\n\n${names.map((n) => `- \`${n}\``).join("\n")}\n\n## Acceptance criteria\n\n- [ ] It works.\n`;
+const withResources = (t, issues) => {
+  const p = project(t, { issues: [...issues, spec] });
+  saveSettings(p, { coderLimit: 4 });
+  put(p.repo, "docs/agents/environments.md", resourcesDoc);
+  git(p.repo, "add", "-A");
+  git(p.repo, "commit", "-q", "-m", "environments");
+  git(p.repo, "push", "-q", "origin", "HEAD:main");
+  return p;
+};
+
+test("two tickets that need the same shared resource take turns, while one that doesn't runs alongside", (t) => {
+  const p = withResources(t, [
+    free(41, "Export button", { body: needing("database") }),
+    free(42, "Import button", { body: needing("database") }),
+    free(43, "Share button", { body: needing("port 3000") }),
+    free(44, "Print button", { body: "## What to build\n\nNothing shared.\n" }),
+  ]);
+  assert.equal(p.start(41).code, 0);
+
+  const blocked = p.start(42);
+  assert.equal(blocked.code, 5);
+  assert.match(blocked.stderr, /`database`, which coder-1 has for #41/);
+  assert.equal(p.check(42).code, 5);
+  assert.equal(p.column(42), null);
+  assert.equal(worktrees(p.repo), 2);
+
+  assert.equal(p.start(43).code, 0, "a different resource runs in parallel");
+  assert.equal(p.start(44).code, 0, "a ticket that needs nothing shared runs in parallel");
+  assert.deepEqual(p.status().agents.map((a) => [a.issue, a.resources]), [[41, ["database"]], [43, ["port 3000"]], [44, undefined]]);
+
+  // The first ticket merging frees the resource.
+  p.writeStatus({ ...p.status(), agents: p.status().agents.filter((a) => a.issue !== 41) });
+  assert.equal(p.start(42).code, 0);
+});
+
+test("a ticket that needs two resources waits for whichever one is taken", (t) => {
+  const p = withResources(t, [free(41, "Export button", { body: needing("port 3000") }), free(42, "Import button", { body: needing("database", "Port 3000") })]);
+  assert.equal(p.start(41).code, 0);
+  const { code, stderr } = p.start(42);
+  assert.equal(code, 5);
+  assert.match(stderr, /`port 3000`/);
+});
+
+test("a ticket naming a resource the environment doesn't list is refused, with the list", (t) => {
+  const p = withResources(t, [free(41, "Export button", { body: needing("databse") })]);
+  for (const result of [p.check(41), p.start(41)]) {
+    assert.equal(result.code, 4);
+    assert.match(result.stderr, /`databse`.*environments\.md.*`database`, `port 3000`/s);
+  }
+  assert.equal(worktrees(p.repo), 1);
+});
+
+test("a ticket naming a resource when the project lists none is refused", (t) => {
+  const p = project(t, { issues: [free(41, "Export button", { body: needing("database") }), spec] });
+  const { code, stderr } = p.start(41);
+  assert.equal(code, 4);
+  assert.match(stderr, /`database`.*lists no shared resources/);
+});
+
+test("a ticket that says it needs no shared resource starts without an environments doc", (t) => {
+  const p = project(t, { issues: [free(41, "Export button", { body: "## Shared resources\n\nNone.\n" }), spec] });
+  assert.equal(p.start(41).code, 0);
+  assert.equal("resources" in p.status().agents[0], false);
+});

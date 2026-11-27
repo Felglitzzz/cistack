@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, project, scripts } from "./fakes/project.mjs";
 
@@ -202,7 +202,7 @@ test("rebase refuses when the base hasn't moved, and reports a conflict for the 
   const c = conflict.merge("rebase", "--pr", "60");
   assert.equal(c.code, 2);
   assert.match(c.stderr, /conflict/);
-  assert.match(c.stderr, /ask the coder to rebase/);
+  assert.match(c.stderr, /Resolving a merge conflict.*cistack:implement/);
 });
 
 const override = (p, ...more) => p.merge("override", "--pr", "60", "--reason", "Owner accepts the risk: it ships behind a flag.", ...more);
@@ -320,4 +320,12 @@ test("a coder whose worktree is kept still holds its place, and the merge doesn'
   assert.equal(json.freed, null);
   assert.equal(p.status().agents.length, 1);
   assert.match(json.recheck, /dispatch\.mjs check/);
+});
+
+test("the section the conflict hint names exists in the coder's skill, with the steps the owner asked for", () => {
+  const skill = readFileSync(join(scripts, "../skills/implement/SKILL.md"), "utf8");
+  const [, section] = skill.split(/^## Resolving a merge conflict$/m);
+  assert.ok(section, "implement has a \"Resolving a merge conflict\" section");
+  for (const step of [/origin\/<base> -- <file>/, /gh pr view/, /both sides' intent/, /BLOCKED/, /full tests|whole agreed checks/, /--force-with-lease/, /## Conflict resolution/]) assert.match(section, step);
+  assert.match(readFileSync(join(scripts, "../skills/merge-loop/SKILL.md"), "utf8"), /Resolving a merge conflict/);
 });

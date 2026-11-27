@@ -7,6 +7,7 @@
 - Onboarding section H records a model per role (defaults: coordinator, reviewer and teacher on `opus`; coder and QA on `sonnet`; advisor on `fable`) and the coder limit in `.cistack/settings.json`, which is gitignored. `scripts/settings.mjs` shows and sets them (#12).
 - Each agent runs on its role's model: `dispatch.mjs start`, `review.mjs next` (for a new reviewer) and `qa.mjs start` print a `model` that the coordinator passes to the Agent tool, and `start.sh` starts the coordinator on its model (#12).
 - A merge (and a cleanup) prints `freed`, the coder's place and shared resources it released, and `recheck`, which tells the coordinator to check the waiting tickets again; `cistack:merge-loop` says to do it every time, so a ticket waiting on the limit or a resource isn't forgotten (#12).
+- `cistack:implement` has a written procedure for resolving a merge conflict, which parallel coders make common: find the pull request that changed the lines and read its intent, keep both sides' intent (or stop with `BLOCKED`), re-run every agreed check, push with `--force-with-lease` to the ticket's own branch, and list each file's resolution in the pull request's body for the reviewer. `merge.mjs rebase` and `cistack:merge-loop` point the coder at it. The push guard already allows `--force-with-lease` to a ticket branch and refuses it to the base (#12).
 - Onboarding section C asks for each shared resource as a named bullet. Run `/cistack:onboard` again to change your answers in a project set up earlier (#12).
 
 ## 0.8.0

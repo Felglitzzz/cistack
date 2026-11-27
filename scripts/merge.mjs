@@ -36,6 +36,9 @@ import { boardStatus } from "./lib/board.mjs";
 import { CHECKLIST, failing, fetchPullRequest, marker, missingPasses, pullRequest, reviewPassed, verdictOnHead } from "./lib/pr.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 
+// What to do about a conflict: the coder's procedure is in the implement skill.
+const CONFLICT_HINT = 'If there is a conflict, send the coder the conflict and have it follow the "Resolving a merge conflict" section of the cistack:implement skill.';
+
 const USAGE = "usage: merge.mjs next --pr <n> | merge --pr <n> --owner <owner> --project <number> | rebase --pr <n> | override --pr <n> --reason <text> [--accept-security <ids>] | cleanup --pr <n> --owner <owner> --project <number>";
 
 function parseArgs(argv) {
@@ -85,7 +88,7 @@ function rebase(opts) {
   const root = projectRoot();
   if (!baseMoved(root, pr)) refuse(`The base ${pr.base} hasn't moved since pull request #${pr.number}'s branch was cut: there is nothing to rebase.`);
   const before = patchId(root, pr.base, pr.head);
-  gh(["pr", "update-branch", String(pr.number), "--rebase"], { hint: "If there is a conflict, ask the coder to rebase the branch onto the base and push it." });
+  gh(["pr", "update-branch", String(pr.number), "--rebase"], { hint: CONFLICT_HINT });
   const { head } = pullRequest(opts.pr);
   if (head === pr.head) refuse(`GitHub left pull request #${pr.number}'s head at ${head}: nothing was rebased.`);
   git(root, "fetch", "origin", pr.base, `pull/${pr.number}/head`);

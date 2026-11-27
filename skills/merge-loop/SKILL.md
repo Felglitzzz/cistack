@@ -21,7 +21,7 @@ The board's owner and number are in `docs/agents/issue-tracker.md`. A hook refus
   ```
   node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" rebase --pr <n>
   ```
-  GitHub rebases the pull request's commits onto the base. If the change itself is the same, the reviewer's pass carries over and `reviewCarriesOver` is true. Either way the head is new, so QA runs again: go back to the `cistack:qa-loop` skill, and to review first when `reviewCarriesOver` is false. Exit code 2 with a conflict: send the coder the conflict with SendMessage and ask it to rebase the branch onto the base and push; then run `review.mjs next`, as after any push.
+  GitHub rebases the pull request's commits onto the base. If the change itself is the same, the reviewer's pass carries over and `reviewCarriesOver` is true. Either way the head is new, so QA runs again: go back to the `cistack:qa-loop` skill, and to review first when `reviewCarriesOver` is false. Exit code 2 with a conflict: send the coder the conflict with SendMessage and tell it to follow the "Resolving a merge conflict" section of the `cistack:implement` skill (it keeps both changes' intent, re-runs every check, pushes with `--force-with-lease` and lists each file it resolved in the pull request's body). If that coder is gone, start one as the review loop does under `answer`, and give it that instruction. When it reports `ANSWERED`, run `review.mjs next`, as after any push, and when it reports `BLOCKED` put its finding to the owner. The reviewer checks its `## Conflict resolution` list.
 - **`merge`**:
   ```
   node "${CLAUDE_PLUGIN_ROOT}/scripts/merge.mjs" merge --pr <n> --owner <owner> --project <number>

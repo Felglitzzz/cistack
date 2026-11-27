@@ -1,6 +1,6 @@
 ---
 name: coder
-description: A cistack coder. It implements exactly one ticket in its own worktree, opens that ticket's pull request and answers its review and QA. Only the coordinator dispatches it, with the brief from scripts/dispatch.mjs.
+description: A cistack coder. It implements exactly one ticket in its own worktree, opens that ticket's pull request and answers its review, QA and merge conflicts. Only the coordinator dispatches it, with the brief from scripts/dispatch.mjs.
 model: sonnet
 skills:
   - cistack:implement
@@ -31,5 +31,5 @@ You can't reach the owner. When a decision is theirs, such as an acceptance crit
 End with one of:
 
 - `PR #<number>`: its link, each check you ran with its result, and anything you couldn't run;
-- `ANSWERED #<number>`, after a review round or a failed QA run: each finding's mark (or what you did about each QA failure), the pushed commit and the checks' results;
+- `ANSWERED #<number>`, after a review round, a failed QA run or a resolved merge conflict (each conflicting file and how it was resolved): each finding's mark (or what you did about each QA failure), the pushed commit and the checks' results;
 - `BLOCKED`: what stopped you, what you tried, and the question or help you need.

@@ -62,3 +62,16 @@ Commit your fixes, run the agreed checks on the new commit as in step 4, push, a
 ## Answering a failed QA run
 
 The coordinator sends what QA found failing. Check each one against the code and, where you can, run it yourself. Fix what stands with the `cistack:tdd` skill, run the agreed checks on the new commit, push, and update the commit and results in the pull request's body. If you believe one is wrong, give your evidence instead of changing the code. Then report: what you did about each, the pushed commit and the checks' results. There are no marks to post.
+
+## Resolving a merge conflict
+
+With several coders at work, another pull request often changes the lines yours does. The coordinator sends you the conflict, or you meet it when you rebase. The aim is a branch that keeps what both changes were for. Do it in order:
+
+1. **Fetch the base and start the rebase.** `git -C "<worktree>" fetch origin <base>`, then `git -C "<worktree>" rebase origin/<base>`. List the conflicting files with `git -C "<worktree>" status`.
+2. **Find out what the other change meant.** For each conflicting file, `git -C "<worktree>" log origin/<base> -- <file>` shows the commits that landed on it. Find each one's merged pull request (`gh pr list --state merged --search "<sha>" --json number,title`) and read it with `gh pr view <number> --json title,body,files`, and the ticket it closed. Read what it set out to do, not only what the lines say.
+3. **Keep both sides' intent.** Write the result so your ticket's behavior and the other change's behavior both work. Never pick one side whole, and never delete the other change to make the conflict go away. If you can't keep both, because the two changes contradict each other, stop: `git -C "<worktree>" rebase --abort`, change nothing more, and end with `BLOCKED`, naming the files, the other pull request and what you found.
+4. **Run everything again.** Finish the rebase, then run the project's whole agreed checks from `docs/agents/commands.md` (the full test suite, lint, build and end-to-end), as in step 4, not only your own tests. A test that now fails because of the other change's code is part of the conflict: fix it the same way, or `BLOCKED` if you can't.
+5. **Push your own branch, safely.** `git -C "<worktree>" push --force-with-lease origin <branch>`: only your ticket's branch, never the base, and never plain `--force`. If it is refused because the branch moved, fetch it and look at what is there before you try again.
+6. **Say how you resolved it.** Add a `## Conflict resolution` section to the pull request's body: each conflicting file, the pull request it conflicted with, and in a line how you kept both. Update the commit and the checks' results in the body too. The reviewer uses this list to check that nothing was lost.
+
+Then report as for a review round: `ANSWERED #<number>`, with the files, how each was resolved, the pushed commit and the checks' results. The head is new, so a fresh review follows.

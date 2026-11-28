@@ -17,7 +17,11 @@ Do what `action` says, then run it again. Exit code 4 means the pull request can
 
 ## The actions
 
-- **`review`**: start a new reviewer with the Agent tool: `subagent_type` `cistack:reviewer`, `model` set to the `model` the script printed, `run_in_background` true, and the `brief` as the prompt, word for word. One new agent every round: never send an earlier reviewer a message, and add nothing about earlier rounds. When it reports, run `next` again. If it ended without posting a verdict, start another. After a second failure, tell the owner what it said.
+- **`review`**: first record the reviewer, with the ticket's number (`issue`):
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/route.mjs" start --issue <ticket> --role reviewer
+  ```
+  Then start it with the Agent tool: `subagent_type` `cistack:reviewer`, `name` set to the `name` route.mjs printed, `model` set to the `model` review.mjs printed, `run_in_background` true, and the `brief` as the prompt, word for word. When route.mjs printed `add` (the owner's messages for the reviewer), put it under the brief, word for word. One new agent every round: never send an earlier reviewer a message, and add nothing about earlier rounds. The one thing you send a running reviewer is the owner's message that `route.mjs message` routes to it. When it reports, run `next` again. If it ended without posting a verdict, run `route.mjs stop --issue <ticket> --role reviewer`, which keeps the owner's messages for the next one, and start another from the top of this step. After a second failure, tell the owner what it said.
 - **`answer`**: send `message` to the ticket's coder with SendMessage, word for word. It fixes, pushes and posts its marks. If that coder is gone, remove its entry from `agents` in `.cistack/status.json` and start one with
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" start --issue <ticket> --pr <n> --owner <owner> --project <number> --thread <thread-id>`,
   then dispatch it as `cistack:dispatch` does (with the `model` it printed), with the `brief` followed by `message` as its prompt. If that script says to wait (exit code 5), the coder limit or a shared resource is taken: tell the owner, and send the answer when it frees. A coder that ends without posting its marks gets the reason put right and the message again.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0
+
+- Talk to any role from a ticket's thread. A message starting with `@qa`, `@reviewer`, `@coder-2`, `@coder`, `@advisor` or `@teacher` reaches that role on that ticket; one without a role reaches whoever is working on it (the reviewer or QA while one runs, otherwise the coder). The coordinator reacts 👀 to every message it passes on (#11).
+- `scripts/route.mjs message` finds a thread's ticket in the status file's `threads` and says who a message is for. A message for a role that isn't running is held in `.cistack/status.json` and put under the brief of the next one started on that ticket. A reviewer or QA that ends without a verdict or report leaves its messages for the next one (#11).
+- The project channel, spec threads, grilling threads, `@coordinator`, tickets nobody is working on and your answers to the coordinator's own questions stay with the coordinator (#11).
+- The coordinator records each reviewer with `route.mjs start` before starting it. QA runs are now named `qa-1`, `qa-2` and so on, and `qa.mjs start` prints the `name` (#11).
+- This version has no advisor or teacher: messages for them are held (#11).
+
 ## 0.9.0
 
 - Several coders can build at once, up to a limit you set: `scripts/dispatch.mjs` refuses (exit code 5, "not now") a coder past `coderLimit`, 2 by default, and the limit is read afresh at every dispatch, so a change applies from the next one. A coder keeps its place until its ticket's pull request has merged (#12).

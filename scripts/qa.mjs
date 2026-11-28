@@ -10,7 +10,8 @@
 //   node scripts/qa.mjs start --pr <n> --owner <owner> --project <number>
 //     For the coordinator: once the reviewer has passed the head, moves the ticket to
 //     In QA, creates a new worktree at that head, records the run in
-//     .cistack/status.json and prints the brief and the model to dispatch QA with.
+//     .cistack/status.json and prints the name, brief and model to dispatch QA with. The
+//     brief ends with the owner's messages held for this ticket's QA (route.mjs).
 //   node scripts/qa.mjs copy --pr <n> --path <setup file>
 //     For QA: copies one of the project's setup files into its worktree, unless it holds
 //     a variable the agent environment may not.
@@ -22,7 +23,8 @@
 //     lockfile changed), "regressions": ["<what broke>"]}. Works out the result (passed,
 //     failed or unverified), posts it on the pull request and removes the worktree.
 //   node scripts/qa.mjs done --pr <n>
-//     For the coordinator: removes the worktree of a run that ended without reporting.
+//     For the coordinator: removes the worktree of a run that ended without reporting,
+//     and holds the owner's messages it was given for the next run.
 //
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh or git failed,
 // 3 token lacks the project scope, 4 refused.
@@ -38,6 +40,7 @@ import { agreedCommands, environment, setupFiles } from "./lib/docs.mjs";
 import { refuseWithheld } from "./lib/env-files.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { git, onBase } from "./lib/git.mjs";
+import { handOver, takeBack } from "./lib/inbox.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
 import { acceptanceCriteria } from "./lib/criteria.mjs";
 import { marker, pullRequest, qaReport, reviewPassed } from "./lib/pr.mjs";
@@ -210,11 +213,16 @@ function start(opts) {
   const move = boardStatus({ owner: opts.owner, number: opts.project, status: "In QA", hint: "Run the same command again to finish." });
   move(ticket.url);
   for (const left of worktreesOf(root, pr.number)) removeWorktree(root, left);
-  const run = { name: "qa", role: "qa", issue: pr.issue, pr: pr.number, head: pr.head, worktree: newWorktree(root, pr), lockfiles };
+  const worktree = newWorktree(root, pr);
   const state = readStatus();
+  // Numbered, so a message meant for this run can't reach an earlier one or another ticket's.
+  state.qaCount = (state.qaCount ?? 0) + 1;
+  const run = { name: `qa-${state.qaCount}`, role: "qa", issue: pr.issue, pr: pr.number, head: pr.head, worktree, lockfiles };
+  const owners = handOver(state, run);
   state.agents = [...(state.agents ?? []), run];
   writeCistack("status.json", state);
-  return { pr: pr.number, issue: pr.issue, head: pr.head, model: modelFor("qa"), worktree: run.worktree, brief: brief({ pr, ticket, run, docs, list, files }) };
+  const task = [brief({ pr, ticket, run, docs, list, files }), owners].filter(Boolean).join("\n\n");
+  return { name: run.name, pr: pr.number, issue: pr.issue, head: pr.head, model: modelFor("qa"), worktree, brief: task };
 }
 
 function copy(opts) {
@@ -334,9 +342,12 @@ function removeWorktree(root, worktree) {
   return true;
 }
 
-function forgetRun(number) {
+// With `reported`, the run did its work, so the owner's messages given to it are done with.
+function forgetRun(number, { reported = false } = {}) {
   const state = readStatus();
-  state.agents = (state.agents ?? []).filter((a) => !(a.role === "qa" && a.pr === number));
+  const its = (a) => a.role === "qa" && a.pr === number;
+  if (!reported) takeBack(state, (state.agents ?? []).filter(its));
+  state.agents = (state.agents ?? []).filter((a) => !its(a));
   writeCistack("status.json", state);
 }
 
@@ -359,7 +370,7 @@ function post(opts) {
 
   if (existsSync(opts.file)) unlinkSync(opts.file);
   const worktreeRemoved = removeWorktree(root, worktree);
-  if (worktreeRemoved) forgetRun(pr.number);
+  if (worktreeRemoved) forgetRun(pr.number, { reported: true });
   return { pr: pr.number, issue: pr.issue, head, result, url, worktreeRemoved };
 }
 

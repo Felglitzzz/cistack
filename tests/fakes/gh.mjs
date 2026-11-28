@@ -235,6 +235,7 @@ if (group === "issue" && command === "close") {
 if (group === "issue" && command === "view") {
   const issue = state.issues.find((i) => i.number === Number(args[2]));
   if (flag("--json") === "url") out({ url: issueUrl(issue.number) });
+  if (flag("--json") === "state,subIssues") out({ state: issue.state ?? "OPEN", subIssues: { totalCount: issue.subIssues ?? 0 } });
   if (flag("--json") === "title,body,url,parent") {
     out({ title: issue.title, body: issue.body ?? "", url: issueUrl(issue.number), parent: issue.parent ? { number: issue.parent } : null });
   }

@@ -57,6 +57,12 @@ A coder counts against the coder limit, and its ticket's shared resources stay t
 
 Two tickets that need the same shared resource take turns only when each ticket lists it under `## Shared resources`, with the name `docs/agents/environments.md` gives it. The script refuses a name the doc doesn't list, but it can't know that a ticket forgot to list a resource it uses. Nothing stops a coder from using a resource its ticket didn't list.
 
+## Your messages reach a role through the coordinator
+
+The coordinator is the only bot, so a message waits while it is busy, and a role gets it only when the coordinator passes it on. The script decides where a message goes; reacting 👀, sending it and telling an answer to the coordinator's own question apart are the coordinator's instructions, not enforced.
+
+A role is named only at the very start of a message, and a thread reaches a ticket only if `.cistack/status.json` maps it. Wake-up clears every agent from an earlier session, so until a ticket is dispatched again its thread reaches the coordinator, and a message naming a role is held. A held message for a ticket that merges first reaches nobody.
+
 ## Away from your machine
 
 A permission prompt pauses the work until someone answers it. `scripts/start.sh` starts the coordinator with Remote Control, auto mode and `caffeinate`. To answer from your phone:

@@ -258,7 +258,8 @@ test("start moves the ticket to In QA and puts the head in a new worktree outsid
   assert.ok(!relative(p.temp, json.worktree).startsWith(".."));
   assert.equal(existsSync(join(json.worktree, ".env.test")), false, "setup files are copied only when a check needs them");
   assert.equal(existsSync(join(json.worktree, "node_modules")), false);
-  assert.deepEqual(p.status().agents, [{ name: "qa", role: "qa", issue: 41, pr: 60, head: p.head, worktree: json.worktree, lockfiles: [] }]);
+  assert.equal(json.name, "qa-1");
+  assert.deepEqual(p.status().agents, [{ name: "qa-1", role: "qa", issue: 41, pr: 60, head: p.head, worktree: json.worktree, lockfiles: [] }]);
   assert.deepEqual(p.status().threads, { 41: "999" });
 });
 
@@ -709,4 +710,39 @@ test("start prints QA's configured model, and a changed model applies from the n
   p.ok(p.run("done", "--pr", "60"));
   writeFileSync(join(p.repo, ".cistack/settings.json"), JSON.stringify({ models: { qa: "opus" } }));
   assert.equal(p.ok(p.start()).model, "opus");
+});
+
+test("start names every QA run apart, so the owner's messages reach the one running", (t) => {
+  const p = project(t);
+  assert.equal(p.ok(p.start()).name, "qa-1");
+  done(p);
+  assert.equal(p.ok(p.start()).name, "qa-2");
+});
+
+test("start hands the owner's held QA messages to QA in its brief, once", (t) => {
+  const held = [
+    { issue: 41, role: "qa", message: "8001", words: "@qa check an empty report" },
+    { issue: 41, role: "reviewer", message: "8002", words: "@reviewer look at the escaping" },
+  ];
+  const p = project(t, { status: { threads: { 41: "999" }, held } });
+  const { brief } = p.ok(p.start());
+  assert.match(brief, /## From the owner/);
+  assert.ok(brief.endsWith("> @qa check an empty report"), brief);
+  assert.doesNotMatch(brief, /escaping/);
+  assert.deepEqual(p.status().held, [held[1]]);
+});
+
+test("messages given to a QA run that ends without a report are held for the next one, and a report ends them", (t) => {
+  const held = [{ issue: 41, role: "qa", message: "8001", words: "@qa check an empty report" }];
+  const p = project(t, { status: { threads: { 41: "999" }, held } });
+  p.ok(p.start());
+  done(p);
+  assert.deepEqual(p.status().held, held);
+  const { brief, worktree } = p.ok(p.start());
+  assert.match(brief, /> @qa check an empty report$/);
+  const file = join(worktree, "cistack-qa-report.json");
+  writeFileSync(file, JSON.stringify(goodReport()));
+  p.ok(p.run("post", "--pr", "60", "--file", file));
+  assert.deepEqual(p.status().held, []);
+  assert.deepEqual(p.status().agents, []);
 });

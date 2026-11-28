@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.9.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging and a spec's signoff work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.10.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging, a spec's signoff and routing your messages to a role work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -50,6 +50,12 @@ Tell the coordinator what you want, in the terminal or the project channel. It o
 Ask the coordinator to build a ticket whose blockers have merged. It opens a ticket thread, gives a fresh coder its own worktree under `.claude/worktrees/` with your setup files copied in, and moves the card to In progress. The coder works test-first, runs your agreed checks, and opens a pull request that closes the ticket; the card moves to In review. Onboarding's `docs/agents/` files must be on the base branch first.
 
 Ask for a whole spec and the coordinator dispatches every ready ticket, several coders at once, up to your coder limit (2 unless you chose another). A change to the limit applies from the next dispatch. Tickets that need the same shared resource, such as a database or a port, take turns; the rest run side by side. A ticket names its resources under `## Shared resources`, using the names in `docs/agents/environments.md`. Every agent runs on the model you chose for its role: by default Opus for the coordinator, reviewer and teacher, Sonnet for coders and QA, and Fable for the advisor.
+
+## Talk to a role
+
+In a ticket thread, start a message with `@qa`, `@reviewer`, `@coder-2` (or `@coder`), `@advisor` or `@teacher` and it reaches that role on that ticket. Leave the name out and it reaches whoever is working on the ticket: the reviewer or QA while one runs, otherwise the coder. The coordinator reacts 👀 to every message it passes on, and the role answers in the thread. If the role isn't running, such as a reviewer between rounds, your message is held for the next one started on that ticket. (This version has no advisor or teacher yet.)
+
+Everything else is the coordinator's: the project channel, spec threads, `@coordinator`, a ticket nobody is working on, and your answer to a question the coordinator asked you.
 
 ## Review
 

@@ -30,6 +30,8 @@ The board's owner and number are in `docs/agents/issue-tracker.md`.
 
 A posted report removes QA's worktree. Run `next` and do what it says.
 
+The report links QA's videos, which are also in the ticket thread. If QA says a video failed to upload, tell the owner in the ticket thread, with the reason: the local file is deleted, so only a new run can record it again.
+
 If QA ended without posting a report, or says it is `BLOCKED`, remove its worktree at once:
 
 ```

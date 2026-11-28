@@ -30,7 +30,7 @@ Copy a setup file only when a check can't run without it. If the copy is refused
 
 ## 3. Exercise every criterion
 
-Use the behavior the way its user would: run the command, send the request, drive the page, call the public interface. Try the unhappy path the criterion implies, not only the easy one.
+Use the behavior the way its user would: run the command, send the request, drive the page, call the public interface. Try the unhappy path the criterion implies, not only the easy one. Record as you go (section 7).
 
 | Verdict | When |
 |---|---|
@@ -67,7 +67,16 @@ Stop every process you started before you post.
 
 Only when your brief says the lockfile changed. Run the audit command and count its high and critical findings. Any of them fails the run, whether or not this pull request brought them in. If it couldn't run (offline, no tool, none agreed), report it as unverified.
 
-## 7. Post the report
+## 7. Video
+
+The owner watches what you tried. The Video section of your brief says whether there is anywhere to put a recording, and how large it may be.
+
+- Record the flows you exercised, with what the project and its agent environment already have for recording, such as its end-to-end runner's option or a simulator's or screen recorder. Don't change the project to make one.
+- Never show a secret on screen: no env file, token or credential. Others may watch it.
+- Save the files inside your worktree and list them in `videos`. The post script uploads each one and deletes it. Never upload or copy a video yourself.
+- If nothing here can record, or there is nowhere to put it, give `noVideo` with the reason instead. A video is not a verdict: having none fails nothing.
+
+## 8. Post the report
 
 Write this JSON with the Write tool to the file your brief names, then run the `post` command from your brief. Don't pass the JSON through the shell: Claude Code refuses it.
 
@@ -79,15 +88,17 @@ Write this JSON with the Write tool to the file your brief names, then run the `
   ],
   "checks": [{ "step": "<name from the brief>", "verdict": "passed", "evidence": "<the line that shows it>" }],
   "audit": { "high": 0, "critical": 0, "evidence": "<the audit's summary line>" },
-  "regressions": []
+  "regressions": [],
+  "videos": ["<path of a video inside your worktree>"]
 }
 ```
 
 - One entry for every criterion and every agreed command.
 - `ran` and `evidence` are one line each. Evidence is what you observed: an output line, a status code, a file's contents. It is not your opinion of the code.
 - `audit` only when the lockfile changed: the counts, or `{ "unverified": "<why>" }`.
+- `videos`, or `"noVideo": "<why there is none>"` in its place. One of the two, always.
 - Never quote a secret. Put anything starting with `@` in backticks.
 
-The script works out the result, posts the report on the pull request and removes your worktree, so it is the last thing you do there. Anything failed makes the result failed. Otherwise anything unverified makes it unverified, never passed. If the script refuses, it says why: fix the file and run it again. If it says the head has moved, don't retry: report `BLOCKED`.
+The script works out the result, uploads and deletes the videos, posts the report on the pull request with their links and removes your worktree, so it is the last thing you do there. Anything failed makes the result failed. Otherwise anything unverified makes it unverified, never passed. If the script refuses, it says why: fix the file and run it again. If it says the head has moved, don't retry: report `BLOCKED`.
 
-Then post the result and the report's link in the ticket thread, in a few lines.
+Then post the result and the report's link in the ticket thread, in a few lines. The script has already put any video there or linked it. If its output shows a video with an `error`, say that the upload failed and why, in that post and in your report to the coordinator.

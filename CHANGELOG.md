@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- QA records a video of the flows it exercised, and its report lists the files in `videos`, or says why there is none in `noVideo`. One of the two is now required (#13).
+- `scripts/qa.mjs post` uploads each video and then deletes the local file, whether or not the upload worked. A failed upload is said in the report, the ticket thread and the script's output; it doesn't change the result. Only a `.mp4`, `.mov` or `.webm` file inside QA's own worktree is taken (#13).
+- With a Cloudflare R2 bucket set up, every video goes there under a random name, and its link is put in the pull request's report and the ticket thread (#13).
+- Without one, the video is posted into the ticket thread through QA's webhook, and the report links that message. The measured upload limit is 20 MiB, and QA is told to stay under it (#13).
+- Onboarding section F optionally connects an R2 bucket: the owner types the keys into the gitignored `.cistack/r2.json`, and `scripts/video.mjs setup` sets a 90-day expiry on cistack's videos, keeping the bucket's other lifecycle rules (#13).
+- Run `/cistack:onboard` again on a project set up earlier to add a bucket. Without one, videos go into the ticket thread with no change to your setup (#13).
+
 ## 0.10.0
 
 - Talk to any role from a ticket's thread. A message starting with `@qa`, `@reviewer`, `@coder-2`, `@coder`, `@advisor` or `@teacher` reaches that role on that ticket; one without a role reaches whoever is working on it (the reviewer or QA while one runs, otherwise the coder). The coordinator reacts 👀 to every message it passes on (#11).

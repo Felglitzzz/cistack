@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.10.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging, a spec's signoff and routing your messages to a role work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.11.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA with video, merging, a spec's signoff and routing your messages to a role work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 
@@ -27,7 +27,7 @@ In the target repository, inside Claude Code:
 /cistack:onboard
 ```
 
-Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run and the environment they run in, asks which environment variables an agent may hold, records a model for each role and how many coders may run at once (in the gitignored `.cistack/settings.json`), writes the answers to `docs/agents/`, and connects a Discord channel. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
+Onboarding needs the GitHub CLI signed in with the `project` scope (`gh auth refresh -s project`). It finds or creates the project's board, agrees the commands coders and QA will run and the environment they run in, asks which environment variables an agent may hold, records a model for each role and how many coders may run at once (in the gitignored `.cistack/settings.json`), writes the answers to `docs/agents/`, connects a Discord channel, and optionally an R2 bucket for QA's videos. See [docs/limitations.md](docs/limitations.md) for what it can't do for you.
 
 ## Start the coordinator
 
@@ -66,6 +66,8 @@ The coordinator then reviews the pull request. A fresh reviewer each round reads
 Once the reviewer passes the head, the ticket moves to In QA and a fresh QA runs the pull request. It works in a new worktree outside your checkout, installs from clean, and runs your agreed commands as your base branch records them. It judges every acceptance criterion passed, failed or unverified, with evidence, and looks for regressions. When a lockfile changed it runs your dependency audit, and any high or critical finding fails the run. It seeds, resets or runs destructive checks only if your agent environment is marked disposable. The report goes on the pull request and the worktree is removed.
 
 A failure goes back to the coder, and the fix is reviewed again first: any push after a pass moves the ticket back to In review. A run with something unverified is not a pass, and comes to you.
+
+QA records the flows it exercised as video, with whatever your project has for recording, and says why when it can't. Posting the report uploads each video and deletes the local file. With a Cloudflare R2 bucket (onboarding's video section), the video goes there under a random name, expires after 90 days, and its link is in the report and the ticket thread. Without one, it goes into the ticket thread if it fits Discord's upload limit, and the report links that message. See [what to expect](docs/limitations.md#qas-video).
 
 A project onboarded with an earlier version needs `/cistack:onboard` run again for `docs/agents/environments.md` and the audit command, merged to the base branch, before QA can run.
 

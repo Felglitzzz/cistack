@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { startFakeDiscord } from "./fakes/discord.mjs";
+import { startFakeR2 } from "./fakes/r2.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const script = resolve(here, "../scripts/qa.mjs");
@@ -172,14 +174,22 @@ function project(t, options = {}) {
     writeFileSync(statePath, JSON.stringify(s));
   };
 
+  const env = () => ({ ...process.env, TMPDIR: temp, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath });
+  const outcome = (code, stdout, stderr) => ({ code, stderr, json: code === 0 ? JSON.parse(stdout) : null });
   const runScript = (path, args, cwd = repo) => {
-    const r = spawnSync(process.execPath, [path, ...args], {
-      cwd,
-      encoding: "utf8",
-      env: { ...process.env, TMPDIR: temp, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath },
-    });
-    return { code: r.status, stderr: r.stderr, json: r.status === 0 ? JSON.parse(r.stdout) : null };
+    const r = spawnSync(process.execPath, [path, ...args], { cwd, encoding: "utf8", env: env() });
+    return outcome(r.status, r.stdout, r.stderr);
   };
+  // For a run that calls a fake server in this process, which spawnSync would block.
+  const runAsync = (...args) =>
+    new Promise((done) => {
+      const child = spawn(process.execPath, [script, ...args], { cwd: repo, env: env() });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("close", (code) => done(outcome(code, stdout, stderr)));
+    });
   const ok = (result) => {
     assert.equal(result.code, 0, result.stderr);
     return result.json;
@@ -203,6 +213,7 @@ function project(t, options = {}) {
     temp,
     head,
     run,
+    runAsync,
     runFrom: (cwd, ...args) => runScript(script, args, cwd),
     ok,
     review,
@@ -406,7 +417,7 @@ const passed = (id) => ({ id, verdict: "passed", ran: "clicked Export on the rep
 const failedCriterion = (id) => ({ id, verdict: "failed", ran: "exported an empty report", evidence: "TypeError: rows is undefined" });
 const unverified = (id) => ({ id, verdict: "unverified", evidence: "needs the iOS app, and there is no simulator" });
 const check = (step, verdict = "passed") => ({ step, verdict, evidence: `${step} output` });
-const goodReport = (over = {}) => ({ criteria: [passed("C1"), passed("C2")], checks: [check("Install"), check("Test"), check("End-to-end")], ...over });
+const goodReport = (over = {}) => ({ criteria: [passed("C1"), passed("C2")], checks: [check("Install"), check("Test"), check("End-to-end")], noVideo: "nothing here records the screen", ...over });
 const clean = { high: 0, critical: 0, evidence: "found 0 vulnerabilities" };
 
 // A started run, and a way to post its report the way QA does.
@@ -436,6 +447,12 @@ test("post puts the report on the pull request, with a verdict and evidence for 
   assert.match(comment.body, /Evidence: report\.csv held 3 rows/);
   assert.match(comment.body, /\*\*End-to-end\*\* passed: End-to-end output/);
   assert.match(comment.body, /No lockfile changed/);
+});
+
+test("a report without a video says why", (t) => {
+  const p = running(t);
+  p.ok(p.post(goodReport()));
+  assert.match(p.comments().at(-1).body, /### Video\nNo video: nothing here records the screen/);
 });
 
 test("the report's hidden data keeps each criterion's verdict and evidence, for the spec's signoff", (t) => {
@@ -512,6 +529,9 @@ for (const [name, report, reason, options] of [
   ["reports audit counts when no audit is agreed", { audit: clean }, /No dependency audit is agreed/, { changes: { "package-lock.json": '{"x": 1}\n' }, commands: commandsDoc({ audit: null }) }],
   ["audits when no lockfile changed", { audit: clean }, /No lockfile changed/],
   ["mentions someone with @", { regressions: ["ask @reviewer"] }, /backticks/],
+  ["says nothing about video", { noVideo: undefined }, /`videos`.*`noVideo`/],
+  ["lists videos and also says there is none", { videos: ["flow.webm"] }, /`videos`.*`noVideo`/],
+  ["lists no video", { noVideo: undefined, videos: [] }, /`videos`.*`noVideo`/],
 ]) {
   test(`post refuses a report that ${name}, and keeps the worktree`, (t) => {
     const p = running(t, options);
@@ -745,4 +765,257 @@ test("messages given to a QA run that ends without a report are held for the nex
   p.ok(p.run("post", "--pr", "60", "--file", file));
   assert.deepEqual(p.status().held, []);
   assert.deepEqual(p.status().agents, []);
+});
+
+// A video file's first bytes, as each kind of recorder writes them.
+const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.from("a recorded flow")]);
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom a second flow")]);
+
+// A run whose videos go to fake Discord and, with `r2`, a fake R2 bucket. QA's worktree
+// is locked so it stays after the post: only the script's own delete removes a video.
+async function recording(t, { r2, discord: discordOptions, videos = { "export.webm": WEBM }, thread = true, ...options } = {}) {
+  const p = running(t, { ...options, ...(thread ? {} : { status: { threads: {} } }) });
+  const discord = await startFakeDiscord(discordOptions);
+  t.after(discord.close);
+  const webhook = discord.hookUrl({ id: "2", token: "qa-hook-token" });
+  put(p.repo, ".cistack/discord.json", JSON.stringify({ channelId: "1", webhooks: { qa: webhook } }));
+  let bucket;
+  if (r2) {
+    bucket = await startFakeR2(r2.fake);
+    t.after(bucket.close);
+    put(p.repo, ".cistack/r2.json", JSON.stringify({ ...bucket.config, ...r2.config }));
+  }
+  for (const [path, content] of Object.entries(videos)) writeFileSync(join(p.worktree, path), content);
+  git(p.repo, "worktree", "lock", p.worktree);
+  const postVideos = (report = {}) => {
+    writeFileSync(p.file, JSON.stringify(goodReport({ noVideo: undefined, videos: Object.keys(videos), ...report })));
+    return p.runAsync("post", "--pr", "60", "--file", p.file);
+  };
+  const messages = () => discord.requests.filter((r) => r.method === "POST");
+  const left = (path) => existsSync(join(p.worktree, path));
+  return { ...p, discord, webhook, r2: bucket, postVideos, messages, left };
+}
+
+test("with R2, every video is uploaded under a random name, linked, and deleted", async (t) => {
+  const p = await recording(t, { r2: {}, videos: { "export.webm": WEBM, "empty-report.mp4": MP4 } });
+  const json = p.ok(await p.postVideos());
+
+  const keys = [...p.r2.objects.keys()];
+  assert.equal(keys.length, 2);
+  for (const key of keys) assert.match(key, /^cistack-qa\/[0-9a-f]{32}\.(webm|mp4)$/);
+  const [webm, mp4] = [".webm", ".mp4"].map((end) => keys.find((key) => key.endsWith(end)));
+  assert.notEqual(webm.slice(0, -5), mp4.slice(0, -4));
+  assert.deepEqual(p.r2.objects.get(webm), { body: WEBM, contentType: "video/webm" });
+  assert.deepEqual(p.r2.objects.get(mp4), { body: MP4, contentType: "video/mp4" });
+
+  const links = [webm, mp4].map((key) => `https://pub-fake.r2.example/${key}`);
+  assert.deepEqual(json.videos, [{ name: "export.webm", url: links[0] }, { name: "empty-report.mp4", url: links[1] }]);
+  const comment = p.comments().at(-1).body;
+  assert.ok(comment.includes(`### Video\n- \`export.webm\`: ${links[0]}\n- \`empty-report.mp4\`: ${links[1]}`), comment);
+
+  const posts = p.messages();
+  assert.ok(posts.every((r) => r.path === "/webhooks/2/qa-hook-token" && r.query.thread_id === "999" && r.body.username === "qa" && !r.files));
+  assert.deepEqual(posts.map((r) => r.body.allowed_mentions), [{ parse: [] }, { parse: [] }]);
+  for (const [i, link] of links.entries()) assert.ok(posts[i].body.content.includes(link), posts[i].body.content);
+
+  assert.equal(json.worktreeRemoved, false);
+  assert.equal(p.left("export.webm"), false);
+  assert.equal(p.left("empty-report.mp4"), false);
+});
+
+for (const [why, r2, reason] of [
+  ["R2 refuses it", { fake: { deny: ["objects"] } }, "R2 refused it: HTTP 403 (AccessDenied)"],
+  ["the secret key is wrong", { config: { secretAccessKey: "not-the-secret" } }, "R2 refused it: HTTP 403 (SignatureDoesNotMatch)"],
+  ["R2 can't be reached", { config: { endpoint: "http://127.0.0.1:1" } }, "couldn't reach R2"],
+  ["a key isn't something a request can carry", { config: { accessKeyId: "AKID123\nmore" } }, "couldn't reach R2"],
+  ["the settings are incomplete", { config: { publicUrl: "" } }, ".cistack/r2.json lacks publicUrl"],
+]) {
+  test(`a failed upload is reported, and the video deleted all the same, when ${why}`, async (t) => {
+    const p = await recording(t, { r2 });
+    const json = p.ok(await p.postVideos());
+    assert.equal(json.result, "passed", "the video is not one of the verdicts");
+    assert.equal(json.videos.length, 1);
+    assert.ok(json.videos[0].error.includes(reason), json.videos[0].error);
+    assert.equal(p.r2.objects.size, 0);
+    assert.equal(p.left("export.webm"), false);
+
+    const comment = p.comments().at(-1).body;
+    assert.ok(comment.includes(`- \`export.webm\`: upload failed: ${json.videos[0].error}`), comment);
+    const posts = p.messages();
+    assert.equal(posts.length, 1, "R2 is where the video goes: it isn't put in the thread instead");
+    assert.ok(!posts[0].files);
+    assert.ok(posts[0].body.content.includes(`export.webm: upload failed: ${json.videos[0].error}`), posts[0].body.content);
+
+    const said = [comment, posts[0].body.content, JSON.stringify(json.videos)].join("\n");
+    for (const secret of ["s3cr3t-key-value", "not-the-secret", "AKID123", "127.0.0.1", "qa-hook-token"]) assert.ok(!said.includes(secret), said);
+  });
+}
+
+test("settings that aren't JSON fail the upload without being quoted", async (t) => {
+  const p = await recording(t, { r2: {} });
+  put(p.repo, ".cistack/r2.json", '{"secretAccessKey": s3cr3t-key-value}');
+  writeFileSync(p.file, JSON.stringify(goodReport({ noVideo: undefined, videos: ["export.webm"] })));
+  const { code, stderr, json } = await p.runAsync("post", "--pr", "60", "--file", p.file);
+  assert.equal(code, 0, stderr);
+  assert.equal(json.videos[0].error, ".cistack/r2.json isn't valid JSON");
+  assert.ok(!p.comments().at(-1).body.includes(p.repo), "no local path is published");
+  assert.ok(!(JSON.stringify(json) + p.comments().at(-1).body + stderr).includes("s3cr3t"));
+  assert.equal(p.left("export.webm"), false);
+});
+
+test("a link the ticket thread couldn't take is said in the report", async (t) => {
+  const p = await recording(t, { r2: {} });
+  put(p.repo, ".cistack/discord.json", JSON.stringify({ webhooks: { qa: `${p.discord.base}/gone` } }));
+  const json = p.ok(await p.postVideos());
+  assert.match(json.videos[0].url, /^https:\/\/pub-fake\.r2\.example\/cistack-qa\//);
+  assert.match(json.videos[0].threadError, /Discord refused it: HTTP 404/);
+  assert.ok(p.comments().at(-1).body.includes(`${json.videos[0].url} (not posted in the ticket thread: ${json.videos[0].threadError})`));
+});
+
+test("with R2 and no ticket thread, the link is in the report alone", async (t) => {
+  const p = await recording(t, { r2: {}, thread: false });
+  const json = p.ok(await p.postVideos());
+  assert.equal(p.r2.objects.size, 1);
+  assert.ok(p.comments().at(-1).body.includes(json.videos[0].url));
+  assert.equal(p.discord.requests.length, 0);
+});
+
+test("without R2, the video is posted into the ticket thread and the report links that message", async (t) => {
+  const p = await recording(t);
+  const json = p.ok(await p.postVideos());
+
+  const [posted, ...more] = p.messages();
+  assert.equal(more.length, 0, "the upload is already in the thread");
+  assert.equal(posted.path, "/webhooks/2/qa-hook-token");
+  assert.equal(posted.query.thread_id, "999");
+  assert.equal(posted.query.wait, "true");
+  assert.equal(posted.body.username, "qa");
+  assert.deepEqual(posted.body.allowed_mentions, { parse: [] });
+  assert.match(posted.body.content, /pull request #60 .*export\.webm/);
+  assert.deepEqual(posted.files, [{ name: "export.webm", type: "video/webm", content: WEBM }]);
+
+  const link = /^https:\/\/discord\.com\/channels\/5550001\/999\/\d+$/;
+  assert.match(json.videos[0].url, link);
+  assert.ok(p.comments().at(-1).body.includes(`- \`export.webm\`: ${json.videos[0].url}`));
+  assert.equal(p.left("export.webm"), false);
+});
+
+test("a video over Discord's upload limit is reported and deleted", async (t) => {
+  const p = await recording(t, { discord: { uploadLimit: WEBM.length - 1 } });
+  const json = p.ok(await p.postVideos());
+  const reason = "Discord refused it: HTTP 413 (Request entity too large)";
+  assert.equal(json.videos[0].error, reason);
+  assert.ok(p.comments().at(-1).body.includes(`- \`export.webm\`: upload failed: ${reason}`));
+  const [, told] = p.messages();
+  assert.ok(!told.files);
+  assert.ok(told.body.content.includes(`export.webm: upload failed: ${reason}`), told.body.content);
+  assert.equal(p.left("export.webm"), false);
+});
+
+test("with no R2 and no ticket thread, there is nowhere to put the video: that is reported, and it is deleted", async (t) => {
+  const p = await recording(t, { thread: false });
+  const json = p.ok(await p.postVideos());
+  assert.match(json.videos[0].error, /nowhere to put it/);
+  assert.match(p.comments().at(-1).body, /upload failed: there is nowhere to put it/);
+  assert.equal(p.discord.requests.length, 0);
+  assert.equal(p.left("export.webm"), false);
+});
+
+// The file is published and then deleted, so only QA's own video is taken.
+for (const [name, listed, reason] of [
+  ["isn't there", "missing.webm", /no video at missing\.webm/],
+  ["is a directory", "recordings", /isn't a video|no video at/],
+  ["is outside QA's worktree", "OUTSIDE", /outside your worktree/],
+  ["is a link out of QA's worktree", "link.webm", /outside your worktree/],
+  ["is a setup file under a video's name", "env.webm", /isn't a video/],
+  ["isn't a kind of video", "notes.txt", /isn't a video.*\.mp4, \.mov, \.webm/],
+]) {
+  test(`post refuses a video that ${name}, and uploads and deletes nothing`, async (t) => {
+    const p = await recording(t, { r2: {} });
+    const outside = join(p.root, "owners.webm");
+    writeFileSync(outside, WEBM);
+    symlinkSync(outside, join(p.worktree, "link.webm"));
+    put(p.worktree, "recordings/keep", "");
+    writeFileSync(join(p.worktree, "env.webm"), "API_URL=http://localhost:3000\n");
+    writeFileSync(join(p.worktree, "notes.txt"), WEBM);
+
+    writeFileSync(p.file, JSON.stringify(goodReport({ noVideo: undefined, videos: ["export.webm", listed === "OUTSIDE" ? outside : listed] })));
+    const { code, stderr } = await p.runAsync("post", "--pr", "60", "--file", p.file);
+    assert.equal(code, 4, stderr);
+    assert.match(stderr, reason);
+    assert.equal(p.r2.objects.size, 0);
+    assert.equal(p.left("export.webm"), true);
+    assert.equal(existsSync(outside), true);
+    assert.equal(p.comments().length, 1);
+    assert.equal(p.status().agents.length, 1);
+  });
+}
+
+test("a refused report keeps its videos for the next try, which takes a full path too", async (t) => {
+  const p = await recording(t, { r2: {} });
+  writeFileSync(p.file, JSON.stringify(goodReport({ criteria: [passed("C1")], noVideo: undefined, videos: ["export.webm"] })));
+  assert.equal((await p.runAsync("post", "--pr", "60", "--file", p.file)).code, 4);
+  assert.equal(p.r2.objects.size, 0);
+  assert.equal(p.left("export.webm"), true);
+
+  p.ok(await p.postVideos({ videos: [join(p.worktree, "export.webm")] }));
+  assert.equal(p.r2.objects.size, 1);
+  assert.equal(p.left("export.webm"), false);
+});
+
+for (const [where, options] of [["R2", { r2: {} }], ["Discord", {}]]) {
+  test(`when the report can't be posted after an upload to ${where}, the next try keeps the link and uploads nothing again`, async (t) => {
+    const p = await recording(t, options);
+    p.patchState((s) => (s.commentsDown = true));
+    const first = await p.postVideos();
+    assert.equal(first.code, 2, first.stderr);
+    assert.equal(p.left("export.webm"), false);
+    const sent = () => [p.r2?.objects.size, p.messages().length];
+    const once = sent();
+
+    p.patchState((s) => (s.commentsDown = false));
+    const json = p.ok(await p.runAsync("post", "--pr", "60", "--file", p.file));
+    assert.deepEqual(sent(), once);
+    assert.equal(json.videos[0].name, "export.webm");
+    assert.ok(p.comments().at(-1).body.includes(`- \`export.webm\`: ${json.videos[0].url}`), p.comments().at(-1).body);
+  });
+}
+
+const R2 = { endpoint: "https://acct.r2.cloudflarestorage.com", bucket: "qa-media-bkt", accessKeyId: "AKID123", secretAccessKey: "s3cr3t-key-value", publicUrl: "https://pub.r2.example" };
+
+test("the brief asks QA to record the flows, and says where the video goes", (t) => {
+  const discord = project(t).start().json.brief;
+  assert.match(discord, /^## Video$/m);
+  assert.match(discord, /Record the flows you exercise/);
+  assert.match(discord, /\.mp4, \.mov, \.webm/);
+  assert.match(discord, /`videos`/);
+  assert.match(discord, /`noVideo`/);
+  assert.match(discord, /ticket thread.*20 MiB/);
+  assert.match(discord, /Never show a secret/);
+
+  const p = project(t);
+  put(p.repo, ".cistack/r2.json", JSON.stringify(R2));
+  const withR2 = p.ok(p.start()).brief;
+  assert.match(withR2, /Record the flows you exercise/);
+  assert.match(withR2, /R2 bucket/);
+  assert.ok(!withR2.includes("20 MiB"), "the limit is Discord's, not R2's");
+  for (const value of Object.values(R2)) assert.ok(!withR2.includes(value), "the settings stay out of prompts");
+});
+
+test("with nowhere to put a video, the brief tells QA not to record one", (t) => {
+  const empty = { endpoint: "", bucket: "", accessKeyId: "", secretAccessKey: "", publicUrl: "" };
+  for (const [options, r2] of [[{ discord: false }], [{ status: { threads: {} } }], [{ discord: false }, empty]]) {
+    const p = project(t, options);
+    if (r2) put(p.repo, ".cistack/r2.json", JSON.stringify(r2));
+    const { brief } = p.ok(p.start());
+    assert.match(brief, /don't record one.*`noVideo`/);
+    assert.ok(!brief.includes("Record the flows"), brief);
+  }
+});
+
+test("a video listed twice is uploaded once", async (t) => {
+  const p = await recording(t, { r2: {} });
+  const json = p.ok(await p.postVideos({ videos: ["export.webm", "./export.webm", join(p.worktree, "export.webm")] }));
+  assert.equal(p.r2.objects.size, 1);
+  assert.equal(json.videos.length, 1);
 });

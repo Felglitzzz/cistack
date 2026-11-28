@@ -60,7 +60,7 @@ Findings your brief lists as settled stay settled unless the code they concern h
 
 ## 6. Post the verdict
 
-Write this JSON with the Write tool to the file your brief names, then run the `post` command from your brief. Don't pass the JSON through the shell: Claude Code refuses it, and quoting loses characters.
+Write this JSON with the Write tool to the file your brief names (an absolute path in the system temp folder), then run the `post` command from your brief. Don't use the shell to write it, with a heredoc or `echo` or anything else: Claude Code refuses a heredoc from an agent in an isolated worktree as too complex to verify, and quoting loses characters. And don't write it to a file in your worktree: auto mode gives no verdict on that Write.
 
 ```json
 {
@@ -72,6 +72,6 @@ Write this JSON with the Write tool to the file your brief names, then run the `
 }
 ```
 
-It posts the labeled comment on the pull request, removes the file and prints the score. If it refuses, it says why: fix the file and run it again. If the head has moved, check out the new head and review it.
+It posts the labeled comment on the pull request, removes the file (and any other verdict file left for this pull request) and prints the score. If it refuses, it says why: fix the file and run it again. If the head has moved, check out the new head and review it.
 
 Then post the score and the verdict's link in the ticket thread, in one or two lines. Finally, `git checkout <the branch from step 1>`, so your worktree is left as you got it.

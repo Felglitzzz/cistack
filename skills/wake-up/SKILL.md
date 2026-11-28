@@ -29,6 +29,8 @@ For each open pull request that closes a ticket, `node "${CLAUDE_PLUGIN_ROOT}/sc
 
 GitHub wins any disagreement. Remove thread and review-round entries for closed issues and merged or closed pull requests. Remove every entry in `agents`: an agent from an earlier session is no longer running. A coder's worktree stays. A QA worktree holds no work, so for each QA entry run `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa.mjs" done --pr <n>`, which removes both. Do this before asking where QA stands. For each reviewer entry run `node "${CLAUDE_PLUGIN_ROOT}/scripts/route.mjs" stop --issue <ticket> --role reviewer`. Both keep the owner's messages for the next agent. Remove the `held` messages of closed issues, and report them as never delivered. Keep the other `held` messages, `coderCount`, `qaCount` and `reviewerCount`. Note any open issue in In progress, In review or In QA that has no pull request: dispatching it again continues in its worktree.
 
+Delete the reviewers' leftover verdict files for pull requests that are no longer open with `node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" sweep`: it removes, from the system temp folder, the files of this repo's merged and closed pull requests, and keeps an open one's. Report what it removed only if it removed something.
+
 Keep `grilling` entries: they have no issue yet, and each is a request still waiting on the owner. Check `.cistack/plans/*/plan.json` too. A plan where some entries have a `number` but not every entry has `onBoard` was interrupted while publishing: offer to finish it with the `cistack:to-tickets` skill's publish step.
 
 ## 3. Find leftover worktrees

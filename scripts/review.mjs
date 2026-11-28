@@ -250,7 +250,7 @@ function reviewerBrief(pr, round, { disputes, settled }) {
     `- Ticket: \`gh issue view ${pr.issue} --json number,title,body,comments\`. Read it yourself.`,
     ...(spec ? [`- Spec: \`gh issue view ${spec} --json title,body\`.`] : []),
     `- Check out the head in your own worktree: \`git fetch origin ${pr.base} pull/${pr.number}/head\`, then \`git checkout --detach ${pr.head}\`.`,
-    `- Post your verdict: write the JSON to \`${verdictFile}\` with the Write tool, then run \`node "${reviewScript}" post --pr ${pr.number} --file ${verdictFile}\`.`,
+    `- Post your verdict: write the JSON to \`${verdictFile}\` with the Write tool, then run \`node "${reviewScript}" post --pr ${pr.number} --file "${verdictFile}"\`.`,
   ];
   if (disputes.length) {
     lines.push("- Rule on each dispute in `rulings`, upheld or dismissed, with a reason. An upheld one is a finding again:");

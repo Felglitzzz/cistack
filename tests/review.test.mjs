@@ -34,8 +34,8 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   if (discord) writeFileSync(join(repo, ".cistack/discord.json"), JSON.stringify({ channelId: "1", webhooks: { reviewer: "https://example.invalid/hook" } }));
   const statePath = join(repo, "gh.json");
   writeFileSync(statePath, JSON.stringify({ calls: [], repo: "acme/widgets", projects: [board()], issues, prs: [pullRequest(pr)] }));
-  // The system temp folder, which cistack puts verdict files in.
-  const temp = realpathSync(mkdtempSync(join(tmpdir(), "cistack-review-temp-")));
+  // The system temp folder, which cistack puts verdict files in. A space in its name must not break the brief's commands.
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), "cistack review temp-")));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const verdictDir = join(temp, "cistack-review");
   const state = () => JSON.parse(readFileSync(statePath, "utf8"));
@@ -122,7 +122,7 @@ test("a pull request with no review yet gets round 1, with a brief for a fresh r
   assert.match(json.brief, /git fetch origin main pull\/60\/head/);
   assert.ok(json.brief.includes(`git checkout --detach ${HEAD}`));
   const verdictFile = join(p.verdictDir, "acme-widgets-pr60-r1.json");
-  assert.ok(json.brief.includes(`node "${script}" post --pr 60 --file ${verdictFile}`));
+  assert.ok(json.brief.includes(`node "${script}" post --pr 60 --file "${verdictFile}"`));
   assert.ok(json.brief.includes(`write the JSON to \`${verdictFile}\` with the Write tool`));
   assert.ok(!json.brief.includes("cistack-verdict.json"), "the verdict file is no longer in the reviewer's worktree");
   assert.ok(existsSync(p.verdictDir), "the folder is there for the Write tool");
@@ -505,7 +505,7 @@ test("a posted verdict ends the reviewer's run, so the owner's later messages wa
 test("each round's brief names its own verdict file, in the temp folder for this pull request", (t) => {
   const p = answered(t);
   const { brief } = p.next();
-  assert.ok(brief.includes(`--file ${join(p.verdictDir, "acme-widgets-pr60-r2.json")}`), brief);
+  assert.ok(brief.includes(`--file "${join(p.verdictDir, "acme-widgets-pr60-r2.json")}"`), brief);
 });
 
 test("post leaves no verdict file for its pull request, including one from an earlier round, and no other pull request's file is touched", (t) => {

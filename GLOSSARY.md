@@ -38,6 +38,14 @@ _Avoid_: sign-off, acceptance test, release check
 The owner's acceptance of a pull request that did not get a full review score, for one head commit; the score stays as it was and QA must still pass.
 _Avoid_: waiver, bypass, force merge
 
+**Advisor override**:
+The advisor's acceptance of a pull request that did not get a full review score, after an escalation the owner left unanswered past the wait, for one head commit; never for a failing security item, and QA must still pass.
+_Avoid_: auto-override, bot override
+
+**Regression run**:
+A run of a target project's full checks on its default branch after pull requests are merged into it.
+_Avoid_: nightly, post-merge QA, smoke test
+
 **Unverified**:
 The verdict QA gives an acceptance criterion it could not exercise; it is never treated as passed.
 _Avoid_: skipped, N/A
@@ -89,8 +97,12 @@ The role that judges a pull request's behavior (acceptance criteria, backward co
 _Avoid_: tester, verifier, QA reviewer
 
 **Advisor**:
-The role that questions plans and decisions when the owner brings it in; it advises and never directs.
+The role that questions plans and decisions when the owner brings it in, and decides a blocking question the owner leaves unanswered past the wait; it never directs other roles.
 _Avoid_: mentor, architect, consultant
+
+**Advisor decision**:
+A blocking question settled by the advisor because the owner didn't answer in time; the owner can reverse it.
+_Avoid_: auto-answer, delegated decision
 
 **Teacher**:
 The role that explains work to the owner in steps, with visuals, so the owner understands what was built and why.

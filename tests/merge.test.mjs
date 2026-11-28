@@ -145,6 +145,39 @@ test("cleanup removes the worktree and branch of a pull request the owner merged
   assert.deepEqual(p.status().agents, []);
 });
 
+// A leftover from a reviewer that stopped before it posted: files for pull request #60, and for others.
+function leaveVerdicts(p) {
+  p.leave("acme-widgets-pr60-r1.json");
+  p.leave("acme-widgets-pr60-r2.json");
+  p.leave("acme-widgets-pr61-r1.json");
+  p.leave("acme-widgets-pr6-r1.json");
+  p.leave("acme-other-pr60-r1.json");
+}
+const othersLeft = ["acme-other-pr60-r1.json", "acme-widgets-pr6-r1.json", "acme-widgets-pr61-r1.json"];
+
+test("cleanup and merge delete the verdict files left for their pull request, and no other pull request's", (t) => {
+  const byHand = project(t, { reviewed: false, qaPassed: false });
+  byHand.patchState((s) => {
+    s.prs[0].state = "MERGED";
+    s.issues[1].state = "CLOSED";
+  });
+  leaveVerdicts(byHand);
+  byHand.ok(byHand.merge("cleanup", "--pr", "60", ...byHand.boardFlags));
+  assert.deepEqual(byHand.leftovers(), othersLeft);
+
+  const p = project(t);
+  leaveVerdicts(p);
+  p.ok(p.merge("merge", "--pr", "60", ...p.boardFlags));
+  assert.deepEqual(p.leftovers(), othersLeft);
+});
+
+test("cleanup of a pull request that isn't merged leaves its verdict files alone", (t) => {
+  const p = project(t);
+  leaveVerdicts(p);
+  assert.equal(p.merge("cleanup", "--pr", "60", ...p.boardFlags).code, 4);
+  assert.equal(p.leftovers().length, 5);
+});
+
 test("cleanup never touches the work of a pull request that isn't merged", (t) => {
   const p = project(t);
   const r = p.merge("cleanup", "--pr", "60", ...p.boardFlags);

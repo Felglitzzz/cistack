@@ -2,7 +2,7 @@
 
 cistack is a Claude Code plugin that gives any repository a small AI software team. You talk to a coordinator. It grills you on a request until you agree on the decisions, writes a spec issue and ticket sub-issues on a GitHub Project board, and hands each ticket to a coder working in its own git worktree. Every pull request passes a fresh reviewer (code, standards, security) and then QA, which runs it from a clean checkout. The coordinator merges once both pass. You follow along, and step in, from Discord.
 
-> **Status: 0.10.0, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging, a spec's signoff and routing your messages to a role work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
+> **Status: 0.10.1, early.** Onboarding, the coordinator's wake-up, planning, coder dispatch, the review loop, QA, merging, a spec's signoff and routing your messages to a role work, with Discord. Several coders build at once, up to your limit. The v1 plan is [spec #2](https://github.com/Felglitzzz/cistack/issues/2), built ticket by ticket.
 
 ## Install
 

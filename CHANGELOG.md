@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+- The reviewer's verdict reaches the pull request in auto mode. In an isolated worktree, auto mode gives no verdict on a Write of the verdict file, and a heredoc is refused as too complex to verify, so `review.mjs next` now names the file in the system temp folder: `<temp>/cistack-review/<owner>-<repo>-pr<n>-r<round>.json`. The reviewer writes it there with the Write tool and passes the same path to `post` (#38).
+- Posting a verdict deletes every verdict file for that pull request, from any round. `merge.mjs merge` and `merge.mjs cleanup` delete the ones left for the pull request they clean up, and `review.mjs sweep`, which wake-up runs, deletes the files of this repo's merged and closed pull requests. Other pull requests' files stay (#38).
+- `cistack:code-review` says to write the file the brief names with the Write tool and why not to use the shell, and `docs/limitations.md` records the 2026-11-28 probe (#38).
+
 ## 0.10.0
 
 - Talk to any role from a ticket's thread. A message starting with `@qa`, `@reviewer`, `@coder-2`, `@coder`, `@advisor` or `@teacher` reaches that role on that ticket; one without a role reaches whoever is working on it (the reviewer or QA while one runs, otherwise the coder). The coordinator reacts 👀 to every message it passes on (#11).

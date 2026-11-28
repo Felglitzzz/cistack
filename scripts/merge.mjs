@@ -24,7 +24,8 @@
 //   node scripts/merge.mjs cleanup --pr <n> --owner <owner> --project <number>
 //     For a pull request that is merged, by `merge` or by hand: removes the coder's
 //     worktree and branch (unless they hold uncommitted work or commits the pull request
-//     lacks, which are kept and reported) and shows the ticket as Done.
+//     lacks, which are kept and reported), deletes any verdict file the reviewer left in the
+//     temp folder for it, and shows the ticket as Done.
 //
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh or git failed,
 // 3 token lacks the project scope, 4 refused.
@@ -35,6 +36,7 @@ import { git, patchId, tryGit } from "./lib/git.mjs";
 import { boardStatus } from "./lib/board.mjs";
 import { CHECKLIST, failing, fetchPullRequest, marker, missingPasses, pullRequest, reviewPassed, verdictOnHead } from "./lib/pr.mjs";
 import { projectRoot, readCistack, writeCistack } from "./lib/project.mjs";
+import { removeVerdictFiles } from "./lib/verdict-files.mjs";
 
 // What to do about a conflict: the coder's procedure is in the implement skill.
 const CONFLICT_HINT = 'If there is a conflict, send the coder the conflict and have it follow the "Resolving a merge conflict" section of the cistack:implement skill.';
@@ -206,6 +208,7 @@ function finish(pr, opts, root) {
   status.agents = (status.agents ?? []).filter((a) => a !== coder || !freed);
   if (status.reviewRounds) delete status.reviewRounds[pr.number];
   writeCistack("status.json", status);
+  removeVerdictFiles(pr);
 
   boardStatus({ owner: opts.owner, number: opts.project, status: "Done" })(ghJson(["issue", "view", String(pr.issue), "--json", "url"]).url);
   return {

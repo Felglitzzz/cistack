@@ -4,7 +4,7 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,7 +102,17 @@ export function project(t, options = {}) {
     writeFileSync(statePath, JSON.stringify(s));
   };
 
-  const env = { ...process.env, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath };
+  // The system temp folder, which the scripts put verdict files in.
+  const temp = join(root, "temp");
+  mkdirSync(temp);
+  const verdictDir = join(temp, "cistack-review");
+  const leave = (name) => {
+    mkdirSync(verdictDir, { recursive: true });
+    writeFileSync(join(verdictDir, name), "{}");
+    return join(verdictDir, name);
+  };
+
+  const env = { ...process.env, TMPDIR: temp, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath };
   const runScript = (path, args, { cwd = repo, input } = {}) => {
     const r = spawnSync(process.execPath, [path, ...args], { cwd, encoding: "utf8", env, input });
     return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.status === 0 && r.stdout.trim().startsWith("{") ? JSON.parse(r.stdout) : null };
@@ -164,6 +174,8 @@ export function project(t, options = {}) {
     root,
     repo,
     origin,
+    leave,
+    leftovers: () => (existsSync(verdictDir) ? readdirSync(verdictDir).sort() : []),
     ghEnv: { CISTACK_GH: env.CISTACK_GH, FAKE_GH_STATE: statePath },
     worktree,
     branch,

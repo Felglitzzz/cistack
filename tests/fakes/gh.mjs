@@ -184,6 +184,12 @@ if (group === "pr" && command === "view") {
   });
 }
 
+// The pull requests in a state, as `gh pr list --json number` shows them.
+if (group === "pr" && command === "list") {
+  const wanted = (flag("--state") ?? "open").toUpperCase();
+  out(state.prs.filter((p) => wanted === "ALL" || p.state === wanted).map(({ number }) => ({ number })));
+}
+
 if (group === "pr" && command === "comment") {
   const pr = state.prs.find((p) => p.number === Number(args[2]));
   if (!pr) die("GraphQL: Could not resolve to a PullRequest");

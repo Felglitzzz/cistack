@@ -30,6 +30,14 @@ The reviewer has no editing tool, but it has a shell, and the Write tool for its
 
 Claude Code refuses a shell command holding JSON from an agent that works in its own worktree ("too complex to verify"), and asks you about it in other sessions (checked on 2.1.332). So the reviewer and the coder write their JSON to a file and give `scripts/review.mjs` its path. The script removes the file after posting.
 
+The reviewer's file is in the system temp folder, not its worktree. On 2026-11-28 a probe in an isolated reviewer worktree, in auto mode, found:
+
+- a Write of the verdict inside the worktree gets no verdict from auto mode's safety check, which counts as a hard failure (it happened three times on one pull request, and an allow rule in the owner's settings didn't change it);
+- a Write to the system temp folder works;
+- a heredoc, to a file or piped into a command, is refused as too complex to verify.
+
+So the review brief names `<temp>/cistack-review/<owner>-<repo>-pr<n>-r<round>.json`, and nobody should move the file back into the worktree or onto the shell. A reviewer that stops before posting leaves its file behind. It is deleted when the next verdict for that pull request is posted, when the pull request is cleaned up after merging, and at the next wake-up once the pull request is merged or closed (`scripts/review.mjs sweep`). The coder's answers file, QA's report and the signoff evidence stay as they were: the coder isn't isolated, and QA works in a worktree in the temp folder.
+
 ## QA's worktree is outside your project
 
 Inside it, Node and other tools would search upwards and find your checkout's installed dependencies and leftover files, so a check could pass on them. QA's worktree is a new directory under the system's temporary directory. Claude Code treats that as outside the project, so expect permission prompts for what QA reads, writes and runs there unless your settings or mode allow them.

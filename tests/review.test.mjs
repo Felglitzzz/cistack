@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,14 +33,18 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
   if (status) writeFileSync(join(repo, ".cistack/status.json"), JSON.stringify(status));
   if (discord) writeFileSync(join(repo, ".cistack/discord.json"), JSON.stringify({ channelId: "1", webhooks: { reviewer: "https://example.invalid/hook" } }));
   const statePath = join(repo, "gh.json");
-  writeFileSync(statePath, JSON.stringify({ calls: [], projects: [board()], issues, prs: [pullRequest(pr)] }));
+  writeFileSync(statePath, JSON.stringify({ calls: [], repo: "acme/widgets", projects: [board()], issues, prs: [pullRequest(pr)] }));
+  // The system temp folder, which cistack puts verdict files in. A space in its name must not break the brief's commands.
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), "cistack review temp-")));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const verdictDir = join(temp, "cistack-review");
   const state = () => JSON.parse(readFileSync(statePath, "utf8"));
 
   function run(args) {
     const r = spawnSync(process.execPath, [script, ...args], {
       cwd: repo,
       encoding: "utf8",
-      env: { ...process.env, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath },
+      env: { ...process.env, TMPDIR: temp, CISTACK_GH: `${process.execPath} ${fakeGh}`, FAKE_GH_STATE: statePath },
     });
     return { code: r.status, stderr: r.stderr, json: r.status === 0 ? JSON.parse(r.stdout) : null };
   }
@@ -62,8 +66,19 @@ function project(t, { pr = {}, status = { threads: { 41: "999" } }, discord = tr
     return result.json;
   };
 
+  // A verdict file as the reviewer leaves it, named as the script names them.
+  const leave = (name) => {
+    mkdirSync(verdictDir, { recursive: true });
+    writeFileSync(join(verdictDir, name), "{}");
+    return join(verdictDir, name);
+  };
+  const leftovers = () => (existsSync(verdictDir) ? readdirSync(verdictDir).sort() : []);
+
   return {
     repo,
+    verdictDir,
+    leave,
+    leftovers,
     run,
     next: (...extra) => ok(run(["next", "--pr", "60", ...boardFlags, ...extra])),
     column: () => state().projects[0].items?.find((i) => i.url.endsWith("/41"))?.status ?? null,
@@ -106,7 +121,11 @@ test("a pull request with no review yet gets round 1, with a brief for a fresh r
   assert.match(json.brief, /gh issue view 39 /);
   assert.match(json.brief, /git fetch origin main pull\/60\/head/);
   assert.ok(json.brief.includes(`git checkout --detach ${HEAD}`));
-  assert.ok(json.brief.includes(`node "${script}" post --pr 60 --file cistack-verdict.json`));
+  const verdictFile = join(p.verdictDir, "acme-widgets-pr60-r1.json");
+  assert.ok(json.brief.includes(`node "${script}" post --pr 60 --file "${verdictFile}"`));
+  assert.ok(json.brief.includes(`write the JSON to \`${verdictFile}\` with the Write tool`));
+  assert.ok(!json.brief.includes("cistack-verdict.json"), "the verdict file is no longer in the reviewer's worktree");
+  assert.ok(existsSync(p.verdictDir), "the folder is there for the Write tool");
   assert.ok(json.brief.includes(`node "${discordScript}" say --as reviewer --thread 999`));
   assert.ok(!json.brief.includes("https://example.invalid/hook"), "the webhook URL stays out of prompts");
   assert.deepEqual(p.status().reviewRounds, { 60: 1 });
@@ -481,4 +500,56 @@ test("a posted verdict ends the reviewer's run, so the owner's later messages wa
   const p = project(t, { status: { threads: { 41: "999" }, agents: [...others, reviewer] } });
   p.ok(p.post(verdict()));
   assert.deepEqual(p.status().agents, others);
+});
+
+test("each round's brief names its own verdict file, in the temp folder for this pull request", (t) => {
+  const p = answered(t);
+  const { brief } = p.next();
+  assert.ok(brief.includes(`--file "${join(p.verdictDir, "acme-widgets-pr60-r2.json")}"`), brief);
+});
+
+test("post leaves no verdict file for its pull request, including one from an earlier round, and no other pull request's file is touched", (t) => {
+  const p = project(t);
+  const earlier = p.leave("acme-widgets-pr60-r1.json");
+  const here = p.leave("acme-widgets-pr60-r2.json");
+  p.leave("acme-widgets-pr6-r2.json");
+  p.leave("acme-widgets-pr61-r2.json");
+  p.leave("acme-other-pr60-r2.json");
+  writeFileSync(here, JSON.stringify(verdict()));
+  p.ok(p.run(["post", "--pr", "60", "--file", here]));
+  assert.equal(existsSync(earlier), false);
+  assert.deepEqual(p.leftovers(), ["acme-other-pr60-r2.json", "acme-widgets-pr6-r2.json", "acme-widgets-pr61-r2.json"]);
+});
+
+test("a refused verdict leaves the files where they are, to be fixed", (t) => {
+  const p = project(t);
+  const here = p.leave("acme-widgets-pr60-r1.json");
+  p.leave("acme-widgets-pr60-r0.json");
+  writeFileSync(here, JSON.stringify({ ...verdict(), securityReview: "skipped" }));
+  assert.equal(p.run(["post", "--pr", "60", "--file", here]).code, 4);
+  assert.deepEqual(p.leftovers(), ["acme-widgets-pr60-r0.json", "acme-widgets-pr60-r1.json"]);
+});
+
+test("sweep deletes the verdict files of pull requests that are merged or closed, and keeps an open one's", (t) => {
+  const p = project(t);
+  const statePath = join(p.repo, "gh.json");
+  const s = JSON.parse(readFileSync(statePath, "utf8"));
+  s.prs.push(pullRequest({ number: 61, state: "MERGED" }), pullRequest({ number: 62, state: "CLOSED" }), pullRequest({ number: 63 }));
+  writeFileSync(statePath, JSON.stringify(s));
+  p.leave("acme-widgets-pr60-r1.json");
+  p.leave("acme-widgets-pr61-r1.json");
+  p.leave("acme-widgets-pr61-r2.json");
+  p.leave("acme-widgets-pr62-r1.json");
+  p.leave("acme-widgets-pr63-r3.json");
+  p.leave("acme-other-pr61-r1.json");
+  p.leave("notes.txt");
+
+  const json = p.ok(p.run(["sweep"]));
+  assert.deepEqual(p.leftovers(), ["acme-other-pr61-r1.json", "acme-widgets-pr60-r1.json", "acme-widgets-pr63-r3.json", "notes.txt"]);
+  assert.deepEqual(json.removed.map((f) => f.split("/").at(-1)), ["acme-widgets-pr61-r1.json", "acme-widgets-pr61-r2.json", "acme-widgets-pr62-r1.json"]);
+});
+
+test("sweep with no temp folder yet removes nothing", (t) => {
+  const p = project(t);
+  assert.deepEqual(p.ok(p.run(["sweep"])).removed, []);
 });

@@ -4,6 +4,8 @@
 // The rounds live on the pull request, as labeled comments that also carry their data.
 // Verdicts and answers come in a file the agent writes: Claude Code refuses or asks about
 // a shell command with JSON in it. The file is removed once its comment is posted.
+// The reviewer's verdict file is in the system temp folder (scripts/lib/verdict-files.mjs):
+// auto mode gives no verdict on a Write inside the reviewer's isolated worktree.
 // The loop stops when a verdict has a full score on the head. Rounds 1-2 are the
 // coder's to answer and 3-4 the coordinator's. A round 4 without a full score goes to
 // the owner, and no 5th review starts until they answer.
@@ -15,12 +17,16 @@
 //     after a pass moves the ticket back to In review.
 //     --owner-ok: the owner allowed going on past round 4.
 //   node scripts/review.mjs post --pr <n> --file <verdict.json>
-//     For the reviewer: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
+//     For the reviewer, with the file its brief names. Posting deletes that file and any other
+//     verdict file left in the temp folder for this pull request. The JSON: {"head": "<sha judged>", "checklist": {"<item>": "pass"|"fail", ...},
 //     "findings": [{"item", "where", "problem"}], "securityReview": "built-in"|"fallback: <why>",
 //     "rulings": [{"finding", "ruling": "upheld"|"dismissed", "reason"}] (one per dispute)}
 //   node scripts/review.mjs answer --pr <n> --file <answers.json>
 //     For the coder, once any fixes are pushed: {"answers": [{"finding": "R1-1",
 //     "mark": "fix"|"dispute"|"duplicate", "reason" (dispute), "of" (duplicate), "note"}]}
+//   node scripts/review.mjs sweep
+//     For the coordinator at wake-up: deletes the verdict files in the temp folder for this
+//     repo's pull requests that are no longer open, merged or closed. An open one's stays.
 //
 // Prints JSON. Exit codes: 0 ok, 1 usage or setup error, 2 gh failed,
 // 3 token lacks the project scope, 4 refused.
@@ -33,9 +39,10 @@ import { die, oneLine, readInput, refuse, text } from "./lib/cli.mjs";
 import { gh, ghJson } from "./lib/gh.mjs";
 import { readCistack, writeCistack } from "./lib/project.mjs";
 import { modelFor } from "./lib/settings.mjs";
+import { removeVerdictFiles, removeVerdictFilesExcept, verdictPath } from "./lib/verdict-files.mjs";
 import { CHECKLIST, failing, marker, pullRequest, records, reviewPassed } from "./lib/pr.mjs";
 
-const USAGE = "usage: review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path>";
+const USAGE = "usage: review.mjs next --pr <n> --owner <owner> --project <number> [--owner-ok] | post --pr <n> --file <path> | answer --pr <n> --file <path> | sweep";
 // The last round that needs no word from the owner.
 const LAST_ROUND = 4;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +50,7 @@ const reviewScript = join(here, "review.mjs");
 const discordScript = join(here, "discord.mjs");
 
 function parseArgs(argv) {
+  if (argv.length === 1 && argv[0] === "sweep") return { command: "sweep" };
   const [command, flag, pr, ...rest] = argv;
   const [ownerFlag, owner, projectFlag, project, ...extra] = rest;
   const valid = {
@@ -182,6 +190,7 @@ function post(opts) {
   const verdict = checkedVerdict(input, pr, verdicts.length + 1, disputes);
   const url = comment(pr, verdictComment(verdict));
   unlinkSync(opts.file);
+  removeVerdictFiles(pr);
   forgetReviewer(pr.issue);
   return { pr: pr.number, round: verdict.round, head: verdict.head, score: score(verdict), findings: verdict.findings, url };
 }
@@ -233,6 +242,7 @@ function answerMessage(pr, verdict) {
 function reviewerBrief(pr, round, { disputes, settled }) {
   const spec = ghJson(["issue", "view", String(pr.issue), "--json", "parent"]).parent?.number;
   const thread = readCistack("discord.json").webhooks?.reviewer && readCistack("status.json").threads?.[pr.issue];
+  const verdictFile = verdictPath(pr, round);
   const lines = [
     `You are the reviewer. Review pull request #${pr.number}, round ${round}.`,
     "",
@@ -240,7 +250,7 @@ function reviewerBrief(pr, round, { disputes, settled }) {
     `- Ticket: \`gh issue view ${pr.issue} --json number,title,body,comments\`. Read it yourself.`,
     ...(spec ? [`- Spec: \`gh issue view ${spec} --json title,body\`.`] : []),
     `- Check out the head in your own worktree: \`git fetch origin ${pr.base} pull/${pr.number}/head\`, then \`git checkout --detach ${pr.head}\`.`,
-    `- Post your verdict: write the JSON to \`cistack-verdict.json\` in your worktree with the Write tool, then run \`node "${reviewScript}" post --pr ${pr.number} --file cistack-verdict.json\`.`,
+    `- Post your verdict: write the JSON to \`${verdictFile}\` with the Write tool, then run \`node "${reviewScript}" post --pr ${pr.number} --file "${verdictFile}"\`.`,
   ];
   if (disputes.length) {
     lines.push("- Rule on each dispute in `rulings`, upheld or dismissed, with a reason. An upheld one is a finding again:");
@@ -290,5 +300,12 @@ function next(opts) {
   return result;
 }
 
+// The files of pull requests that are merged or closed are of no use to anyone.
+function sweep() {
+  const { nameWithOwner } = ghJson(["repo", "view", "--json", "nameWithOwner"]);
+  const open = ghJson(["pr", "list", "--state", "open", "--limit", "1000", "--json", "number"]).map((p) => p.number);
+  return { removed: removeVerdictFilesExcept(nameWithOwner.replace("/", "-"), open) };
+}
+
 const opts = parseArgs(process.argv.slice(2));
-console.log(JSON.stringify({ next, post, answer }[opts.command](opts), null, 2));
+console.log(JSON.stringify({ next, post, answer, sweep }[opts.command](opts), null, 2));
